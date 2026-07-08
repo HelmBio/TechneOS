@@ -1,0 +1,39 @@
+# Environment variables (copy .env.example -> .env)
+.env
+.env.local
+.env.*.local
+
+# Python bytecode & build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tooling caches (Ruff, mypy, pytest — all configured in pyproject.toml)
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# Docker
+docker-compose.override.yml
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coding-agent workspace
+.claude/
