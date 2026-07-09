@@ -8,10 +8,11 @@ Notes & Gotchas** captures per-feature implementation details.
 > **This is a living document — keep it current.** It describes the repository
 > as it stands *today*, not the final design. When a commit adds a package,
 > command, convention, or subsystem, update the relevant section in the same
-> commit. Today the repo is an initial scaffold: the architecture design plus a
-> local Docker development stack. There is no application code, CLI, or test
-> suite yet — those land in subsequent commits, and the rules below that
-> reference them take effect as they arrive.
+> commit. Today the repo contains the architecture design, a local Docker
+> development stack, and the foundation Python layer: the shared **core**
+> library, the **tool-runtime** package, and the Alembic **migrations**. There
+> are no services, CLI, web portal, or test suite yet — those land in subsequent
+> commits, and the rules below that reference them take effect as they arrive.
 
 ---
 
@@ -41,15 +42,19 @@ If you need to run anything against production data, **ask the user first**.
 The Makefile targets available today (run `make help` for the list):
 
 ```bash
-make up       # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak)
-make ps       # show running services
-make logs     # tail service logs
-make down     # stop services
-make down-v   # stop services and remove volumes
-make clean    # remove build artifacts and caches
+make up         # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak)
+make install    # install the uv workspace (core, tool-runtime)
+make migrate    # apply Alembic migrations (make migrate-new / migrate-down also available)
+make lint       # ruff check
+make format     # ruff format + autofix
+make typecheck  # mypy packages/
+make ps         # show running services
+make logs       # tail service logs
+make down       # stop services (down-v also removes volumes)
+make clean      # remove build artifacts and caches
 ```
 
-Application, test, lint, and migration targets are added to the Makefile as the
+Service, test, and web-portal targets are added to the Makefile as the
 corresponding code lands.
 
 ## Coding Conventions
@@ -64,6 +69,22 @@ corresponding code lands.
 - **Async-first** -- use `async def` for all route handlers and database operations.
 
 # Part 2 — Subsystem Notes & Gotchas
+
+## Core library & database migrations
+
+`packages/core` is the shared foundation every service depends on: SQLAlchemy
+2.0 (async) models, Pydantic v2 schemas and settings, auth, object storage,
+cache, the event bus, and the agent bridge. It depends only on
+`packages/tool-runtime` (the tool execution runtime + I/O contract), which has
+no intra-workspace dependencies of its own.
+
+Schema is managed with Alembic (`alembic.ini` + `migrations/`). The history
+starts from a single squashed baseline, `migrations/versions/0001_initial_schema.py`,
+which applies a verified schema-only dump; `migrations/versions/*` is excluded
+from Ruff. Apply migrations with `make migrate`, create a new revision with
+`make migrate-new msg="…"`, and roll back one with `make migrate-down`. Heed the
+Database Safety Rules above — never run migrations against a production database
+without explicit permission.
 
 ## Keycloak DB auto-creation
 

@@ -6,12 +6,13 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — initial scaffold.**
+> **Status — foundation layer.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
-> architecture design and a runnable local development environment. The
-> application code (shared library, API gateway, domain services, CLI, web
-> portal, and execution layer) and the deployment assets are introduced in
+> architecture design, a runnable local development environment, and the
+> foundation Python layer: the shared **core** library, the **tool-runtime**
+> package, and the database migrations. The API gateway, domain services, CLI,
+> web portal, execution layer, and deployment assets are introduced in
 > subsequent commits.
 
 ## Architecture
@@ -33,26 +34,30 @@ The target technology stack:
 | Path | Purpose |
 |------|---------|
 | [`docs/architecture.md`](docs/architecture.md) | Full architecture design document |
+| `packages/core/` | Shared library: SQLAlchemy models, Pydantic schemas, auth, storage, cache, events, agent bridge — every service builds on it |
+| `packages/tool-runtime/` | Tool execution runtime (runner + I/O contract); builds the `techneos/tool-runtime` image. Foundation package with no intra-workspace dependencies |
+| `migrations/` + `alembic.ini` | Alembic setup with the squashed initial schema baseline |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak) |
 | `Makefile` | Developer command shortcuts (`make help`) |
-| `pyproject.toml` | Root uv workspace (members are added as packages land) |
+| `pyproject.toml` | Root uv workspace (members: `core`, `tool-runtime`; more added as packages land) |
 | `.env.example` | Environment variable template |
 | `AGENTS.md` | Conventions & subsystem notes for coding agents |
 
 ## Getting started
 
-**Prerequisite:** Docker & Docker Compose.
+**Prerequisites:** Docker & Docker Compose, Python 3.12, and
+[uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
 cp .env.example .env   # defaults work for local dev
 make up                # start PostgreSQL, MinIO, Valkey, DevPI, Keycloak
-make ps                # check service status
-make down              # stop everything
+make install           # install the Python workspace (core, tool-runtime)
+make migrate           # apply the database schema
 ```
 
-Run `make help` to see all available targets. Python 3.12 + [uv](https://docs.astral.sh/uv/getting-started/installation/)
-and Node.js 20+ become prerequisites once the application code and web portal
-are added in later commits.
+Run `make help` to see all available targets (lint, format, typecheck, migration
+helpers, etc.). Node.js 20+ becomes a prerequisite once the web portal is added
+in a later commit.
 
 ## Documentation
 

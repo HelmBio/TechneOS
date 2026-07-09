@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps clean
+.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -22,6 +22,32 @@ logs: ## Tail logs for all services
 
 ps: ## Show running services
 	docker compose ps
+
+# --- Database ---
+
+migrate: ## Run Alembic migrations
+	uv run alembic upgrade head
+
+migrate-new: ## Create new migration (usage: make migrate-new msg="add users table")
+	uv run alembic revision --autogenerate -m "$(msg)"
+
+migrate-down: ## Rollback last migration
+	uv run alembic downgrade -1
+
+# --- Development ---
+
+install: ## Install all workspace dependencies
+	uv sync --all-packages
+
+lint: ## Run linter
+	uv run ruff check .
+
+format: ## Format code
+	uv run ruff format .
+	uv run ruff check --fix .
+
+typecheck: ## Run type checker
+	uv run mypy packages/
 
 # --- Cleanup ---
 

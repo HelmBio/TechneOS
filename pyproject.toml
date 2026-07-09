@@ -4,13 +4,12 @@ version = "0.1.0"
 description = "AI-powered data and computing platform for drug discovery"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "playwright>=1.60.0",
-    "rdkit",
-]
+dependencies = []
 
 [tool.uv.workspace]
 members = [
+    "packages/core",
+    "packages/tool-runtime",
 ]
 [dependency-groups]
 dev = [
@@ -25,6 +24,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+exclude = ["migrations/versions/*"]
 
 [tool.ruff.lint]
 select = [
@@ -45,8 +45,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"**/seed.py" = ["T201"]  # print is fine in seed scripts
+"**/register_compute_artifacts.py" = ["T201"]  # deploy-stage ingest script prints progress
+"**/build_and_register.py" = ["T201"]  # build/register scripts print progress
 
 [tool.ruff.lint.isort]
+known-first-party = ["core", "techneos_tool_runtime"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -54,8 +58,26 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+# Excluded from type checking:
+#  - build_and_register.py: a standalone publish script that imports the
+#    `management` client toolkit ambiently from the dev workspace (not
+#    importable library code).
+#  - tests: exercised by pytest, not part of the strict-typed library surface.
+exclude = ["/build_and_register\\.py$", "/tests/"]
 
 [[tool.mypy.overrides]]
-module = ["minio.*", "jose.*", "bcrypt.*"]
+# Third-party packages without type stubs / py.typed markers.
+module = ["minio.*", "jose.*", "bcrypt.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Treat as Any (don't analyze):
+#  - valkey: installed but ships no type information (calls read as untyped).
+#  - rdkit: an optional runtime dependency provided by tool images, not installed
+#    in the platform environment; its published stubs also carry an upstream
+#    syntax error, so skip them if it ever is installed.
+module = ["valkey.*", "rdkit.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+follow_imports_for_stubs = true
 

@@ -1,0 +1,8 @@
+# Keep the build context minimal — only pyproject + src are needed for the wheel.
+dist/
+tests/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+Dockerfile
+.dockerignore
