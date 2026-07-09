@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck clean
+.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -48,6 +48,35 @@ format: ## Format code
 
 typecheck: ## Run type checker
 	uv run mypy packages/
+
+# --- Services ---
+
+dev-gateway: ## Run API gateway in dev mode
+	uv run --package gateway uvicorn gateway.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-auth: ## Run auth service in dev mode
+	uv run --package auth-service uvicorn auth_service.main:app --reload --port 8001
+
+dev-dataset: ## Run dataset service in dev mode
+	uv run --package dataset-service uvicorn dataset_service.main:app --reload --port 8002
+
+dev-tool: ## Run tool registry service in dev mode
+	uv run --package tool-service uvicorn tool_service.main:app --reload --port 8003
+
+dev-pipeline: ## Run pipeline service in dev mode
+	uv run --package pipeline-service uvicorn pipeline_service.main:app --reload --port 8004
+
+dev-agent: ## Run agent service in dev mode
+	uv run --package agent-service uvicorn agent_service.main:app --reload --port 8005
+
+dev-notification: ## Run notification service in dev mode
+	uv run --package notification-service uvicorn notification_service.main:app --reload --port 8006
+
+dev-app: ## Run app service in dev mode
+	uv run --package app-service uvicorn app_service.main:app --reload --port 8007
+
+dev-task: ## Run task service in dev mode
+	uv run --package task-service uvicorn task_service.main:app --reload --port 8008
 
 # --- Cleanup ---
 

@@ -1,0 +1,33 @@
+[project]
+name = "techneos-platform-assistant"
+version = "0.1.0"
+description = "The TechneOS Platform Assistant — a built-in agent (tools, config, bridge) that talks to the platform via the gateway. Built on core's agent bridge."
+requires-python = ">=3.12"
+dependencies = [
+    "core",
+    "pydantic-ai>=2.0,<3",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/platform_assistant"]
+
+[tool.uv.sources]
+core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+# NOTE: build_and_register.py imports `management` (the client toolkit) but it is
+# NOT declared as a dependency here on purpose. That script is run manually from
+# the monorepo dev workspace, where `management` is ambient; it never runs inside
+# the agent-service image (where this package ships), and declaring management as
+# a workspace/path source would break that image build (management isn't present
+# there). Same ambient pattern the catalog register scripts use.

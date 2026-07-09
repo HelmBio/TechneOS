@@ -1,7 +1,10 @@
 """Platform-wide settings — instance-level key/value configuration."""
 
-from sqlalchemy import Column, String
+from typing import Any
+
+from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models import Base, TimestampMixin
 
@@ -18,5 +21,5 @@ class PlatformSetting(Base, TimestampMixin):
 
     __tablename__ = "platform_settings"
 
-    key = Column(String(128), primary_key=True)
-    value = Column(JSONB, nullable=False, default=dict)
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

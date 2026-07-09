@@ -10,6 +10,16 @@ dependencies = []
 members = [
     "packages/core",
     "packages/tool-runtime",
+    "packages/platform-assistant",
+    "packages/gateway",
+    "packages/services/auth",
+    "packages/services/dataset",
+    "packages/services/tool",
+    "packages/services/task",
+    "packages/services/pipeline",
+    "packages/services/agent",
+    "packages/services/notification",
+    "packages/services/app",
 ]
 [dependency-groups]
 dev = [
@@ -47,10 +57,13 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "**/seed.py" = ["T201"]  # print is fine in seed scripts
 "**/register_compute_artifacts.py" = ["T201"]  # deploy-stage ingest script prints progress
+"**/main.py" = ["T201"]  # print is fine in startup/shutdown
+"**/events.py" = ["T201"]  # print for dev-visible event logging
+"**/crud/versions.py" = ["T201"]  # print for dev-visible event logging
 "**/build_and_register.py" = ["T201"]  # build/register scripts print progress
 
 [tool.ruff.lint.isort]
-known-first-party = ["core", "techneos_tool_runtime"]
+known-first-party = ["core", "gateway", "auth_service", "dataset_service", "tool_service", "task_service", "pipeline_service", "agent_service", "notification_service", "techneos_tool_runtime"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -67,7 +80,10 @@ exclude = ["/build_and_register\\.py$", "/tests/"]
 
 [[tool.mypy.overrides]]
 # Third-party packages without type stubs / py.typed markers.
-module = ["minio.*", "jose.*", "bcrypt.*", "boto3.*", "botocore.*"]
+module = [
+    "minio.*", "jose.*", "bcrypt.*", "boto3.*", "botocore.*",
+    "docker.*", "jsonschema.*", "pyarrow.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

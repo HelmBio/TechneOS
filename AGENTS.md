@@ -9,10 +9,11 @@ Notes & Gotchas** captures per-feature implementation details.
 > as it stands *today*, not the final design. When a commit adds a package,
 > command, convention, or subsystem, update the relevant section in the same
 > commit. Today the repo contains the architecture design, a local Docker
-> development stack, and the foundation Python layer: the shared **core**
-> library, the **tool-runtime** package, and the Alembic **migrations**. There
-> are no services, CLI, web portal, or test suite yet — those land in subsequent
-> commits, and the rules below that reference them take effect as they arrive.
+> development stack, the foundation Python layer (shared **core** library,
+> **tool-runtime**, Alembic **migrations**), and the **service tier**: the API
+> gateway, the eight domain microservices, and the Platform Assistant. There is
+> no CLI, web portal, or test suite yet — those land in subsequent commits, and
+> the rules below that reference them take effect as they arrive.
 
 ---
 
@@ -54,8 +55,10 @@ make down       # stop services (down-v also removes volumes)
 make clean      # remove build artifacts and caches
 ```
 
-Service, test, and web-portal targets are added to the Makefile as the
-corresponding code lands.
+Run a backend in dev mode with `make dev-gateway` (the API gateway on `:8000`) or
+`make dev-auth` / `dev-dataset` / `dev-tool` / `dev-pipeline` / `dev-agent` /
+`dev-notification` / `dev-app` for the individual services. Test and web-portal
+targets are added as the corresponding code lands.
 
 ## Coding Conventions
 
@@ -85,6 +88,24 @@ from Ruff. Apply migrations with `make migrate`, create a new revision with
 `make migrate-new msg="…"`, and roll back one with `make migrate-down`. Heed the
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
+
+## Service tier & gateway
+
+All client traffic enters through the **gateway** (`packages/gateway`, `:8000`),
+which handles auth, rate limiting, and routing to the domain microservices.
+The eight services each own one domain and run on fixed ports: `auth` (`:8001`),
+`dataset` (`:8002`), `tool` (`:8003`), `pipeline` (`:8004`), `agent` (`:8005`),
+`notification` (`:8006`), `app` (`:8007`), `task` (`:8008`). In dev they run on
+the host via `make dev-<name>`; each imports `core` and talks to the others
+through the gateway or the service URLs in `.env`.
+
+The **Platform Assistant** (`packages/platform-assistant`) is the built-in agent
+that the agent-service depends on. External packages can contribute extra
+assistant tools by declaring a `techneos.platform_assistant_tools` entry point;
+non-platform agents register through the `techneos.agents` group. The
+agent-service pip-installs those packages from the configured package index
+(DevPI locally) at startup, then discovers their entry points — so `core` carries
+no hard dependency on optional tool/agent content.
 
 ## Keycloak DB auto-creation
 

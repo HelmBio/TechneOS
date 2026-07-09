@@ -1,1 +1,1 @@
-"""Phase 2 Pydantic schemas."""
+"""Pydantic schemas."""

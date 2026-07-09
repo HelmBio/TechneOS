@@ -1,7 +1,10 @@
 """Subscription and Notification models — reusable notification system."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, String, Text, UniqueConstraint
+from typing import Any
+
+from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models import Base, TimestampMixin, UUIDMixin
 
@@ -18,13 +21,13 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("user_id", "resource_type", "resource_id", name="uq_subscription"),
     )
 
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    resource_type = Column(String(50), nullable=False, index=True)
-    resource_id = Column(String(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    resource_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     # Optional: notification preferences per subscription
     # e.g. {"email": true, "in_app": true}
-    preferences = Column(JSONB, nullable=False, default=dict)
+    preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class Notification(Base, UUIDMixin, TimestampMixin):
@@ -32,18 +35,18 @@ class Notification(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "notifications"
 
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
-    message = Column(Text, nullable=False)
-    link = Column(String(512), nullable=True)
-    category = Column(
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    category: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="general",
         comment="tool_update | pipeline_status | dataset_update | system | general",
     )
-    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     # Source reference — which resource triggered this notification
-    source_type = Column(String(50), nullable=True)  # "tool", "pipeline", etc.
-    source_id = Column(String(36), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "tool", "pipeline", etc.
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

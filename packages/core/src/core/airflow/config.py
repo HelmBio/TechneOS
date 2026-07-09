@@ -26,9 +26,8 @@ class AirflowSettings(BaseSettings):
     airflow_timeout_seconds: int = 30
 
     # The Airflow DAG id used for TechneOS pipeline runs. The execution package
-    # registers a dynamic DAG under this id — see
-    # packages/execution/dags/dag_factory.py, which reads the same
-    # AIRFLOW_DAG_ID env var directly (it can't import core at runtime).
+    # registers a dynamic DAG under this id — the Airflow DAG factory reads
+    # the same AIRFLOW_DAG_ID env var directly (it can't import core at runtime).
     airflow_dag_id: str = "techneos_airflow_pipeline"
 
     # Platform callback URL that Airflow tasks use to report status.

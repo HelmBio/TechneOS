@@ -1,8 +1,11 @@
 """Agent definition, agentic run, and task models."""
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.user import Org, User  # noqa: F401  — register for relationship resolution
@@ -16,19 +19,19 @@ class AgenticRun(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "agent_runs"
 
-    agent_id = Column(
+    agent_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    title = Column(String(500), nullable=True, comment="optional run title")
-    summary = Column(Text, nullable=True, comment="auto-generated summary of run")
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="optional run title")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True, comment="auto-generated summary of run")
+    metadata_: Mapped[Any] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
 
     # Relationships
     agent = relationship("AgentDefinition", back_populates="agentic_runs")
@@ -46,36 +49,36 @@ class AgentDefinition(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "agents"
 
-    name = Column(String(255), nullable=False, index=True)
-    slug = Column(String(255), nullable=False, unique=True, index=True)
-    description = Column(Text, nullable=True)
-    agent_type = Column(
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="conversational",
         comment="conversational | autonomous | reactive",
     )
-    framework = Column(
+    framework: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="custom",
         comment="custom | langchain | autogen | crewai",
     )
-    system_prompt = Column(Text, nullable=True)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Model configuration (model name, temperature, etc.)
-    model_config_ = Column("model_config", JSONB, nullable=False, default=dict)
+    model_config_: Mapped[Any] = mapped_column("model_config", JSONB, nullable=False, default=dict)
 
     # Tools this agent can use (list of tool slugs)
-    tools = Column(JSONB, nullable=False, default=list)
+    tools: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
 
     # Parameter schemas and defaults
-    parameters_schema = Column(JSONB, nullable=False, default=dict)
-    default_parameters = Column(JSONB, nullable=False, default=dict)
+    parameters_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    default_parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
-    tags = Column(JSONB, nullable=False, default=list)
-    is_public = Column(Boolean, default=False, nullable=False)
-    is_platform = Column(
+    tags: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_platform: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
@@ -91,7 +94,7 @@ class AgentDefinition(Base, UUIDMixin, TimestampMixin):
     #   {"name": "chembl-agent", "version": "0.1.0",
     #    "index_url": "http://devpi:8080/...",  # optional, falls back to PYTHON_PACKAGE_INDEX_URL
     #    "entry_point": "chembl_agent"}          # python entry-point group `techneos.agents`
-    package_config = Column(
+    package_config: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Wheel package coords for runtime install (name, version, index_url, entry_point)",
@@ -104,7 +107,7 @@ class AgentDefinition(Base, UUIDMixin, TimestampMixin):
     # definition (the live columns above); this preserves history and is shaped to
     # mirror a future agent_versions row, so a later agents/agent_versions split is
     # a straight projection.
-    version_history = Column(
+    version_history: Mapped[list[Any]] = mapped_column(
         JSONB,
         nullable=False,
         default=list,
@@ -113,8 +116,8 @@ class AgentDefinition(Base, UUIDMixin, TimestampMixin):
     )
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
 
     # Relationships
     tasks = relationship("AgenticTask", back_populates="agent", cascade="all, delete-orphan")
@@ -142,13 +145,13 @@ class AgenticTask(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "agent_task_runs"
 
-    agent_id = Column(
+    agent_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    agentic_run_id = Column(
+    agentic_run_id: Mapped[Any | None] = mapped_column(
         "conversation_id",
         String(36),
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
@@ -158,7 +161,7 @@ class AgenticTask(Base, UUIDMixin, TimestampMixin):
     )
 
     # Runtime
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum(
             "pending",
             "running",
@@ -170,25 +173,25 @@ class AgenticTask(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default="pending",
     )
-    task = Column(Text, nullable=False, comment="the user's task or prompt")
-    context = Column(
+    task: Mapped[str] = mapped_column(Text, nullable=False, comment="the user's task or prompt")
+    context: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, comment="input context (dataset refs, params, etc.)"
     )
-    result = Column(JSONB, nullable=True, comment="structured result from the agent")
-    messages = Column(
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, comment="structured result from the agent")
+    messages: Mapped[list[Any]] = mapped_column(
         JSONB, nullable=False, default=list, comment="conversation history / reasoning trace"
     )
-    tool_calls = Column(JSONB, nullable=False, default=list, comment="log of tool invocations")
-    error_message = Column(Text, nullable=True)
-    tokens_used = Column(Integer, nullable=True)
+    tool_calls: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, comment="log of tool invocations")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Timing
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Who launched it
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    submitted_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    submitted_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
 
     # Relationships
     agent = relationship("AgentDefinition", back_populates="tasks")

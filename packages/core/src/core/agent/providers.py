@@ -63,7 +63,7 @@ class LLMProviderRegistry:
     """Registry that maps provider slugs to configs.
 
     Populated from DB rows at startup by the platform, with an env-var-based
-    fallback for backward compatibility / single-tenant dev setups.
+    fallback for single-tenant / dev setups.
     """
 
     def __init__(self) -> None:
@@ -96,7 +96,7 @@ class LLMProviderRegistry:
         """Build a config from env vars as a last resort.
 
         The primary path is the platform's DB load at startup. This fallback exists
-        for backward compatibility when no providers are registered. It checks, in
+        for when no providers are registered. It checks, in
         order: ``OPENAI_API_KEY``, then ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY``
         (Gemini via the OpenAI-compatible endpoint). If none are set it returns a
         config that raises a clear error when ``build_client()`` is called.

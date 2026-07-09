@@ -162,7 +162,7 @@ async def seed_admin_user(session: AsyncSession, org: Org, config: dict[str, Any
             changed = True
             print(f"  Set org_id for: {email}")
         if not user.hashed_password:
-            user.hashed_password = hash_password(default_password)  # type: ignore[assignment]
+            user.hashed_password = hash_password(default_password)
             changed = True
             print(f"  Set local password for SSO user: {email} (password: {default_password})")
         if not user.role_id and role:

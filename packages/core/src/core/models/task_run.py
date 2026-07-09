@@ -22,14 +22,14 @@ denormalised columns on ``TaskRun`` and the delegation/escalation history
 is reconstructed from ``start`` / ``delegate`` / ``escalate`` events.
 Notification delivery dedupe now belongs to notification-service.
 """
+
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     Enum,
     ForeignKey,
@@ -39,7 +39,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.tool import Tool, ToolVersion  # noqa: F401  — register FK resolution
@@ -98,69 +98,69 @@ class TaskRun(Base, UUIDMixin):
 
     __tablename__ = "task_runs"
 
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False)
 
     # Denormalised tool info — set at creation so task-service can render
     # list views without crossing into tool-service.
-    tool_id = Column(String(36), ForeignKey("tools.id", ondelete="RESTRICT"), nullable=False)
-    tool_slug = Column(String(255), nullable=False)
-    tool_version_id = Column(
+    tool_id: Mapped[str] = mapped_column(String(36), ForeignKey("tools.id", ondelete="RESTRICT"), nullable=False)
+    tool_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    tool_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tool_versions.id", ondelete="RESTRICT"), nullable=False
     )
     # Denormalised numeric tool version (the N in "v{N}") so list/detail views
     # don't need to join tool_versions.
-    tool_version_no = Column(Integer, nullable=True)
+    tool_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Pipeline linkage (replaces the old tool_run_id linkage)
-    pipeline_run_id = Column(
+    pipeline_run_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("pipeline_runs.id", ondelete="SET NULL"), nullable=True
     )
-    pipeline_step_run_id = Column(
+    pipeline_step_run_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("pipeline_step_runs.id", ondelete="SET NULL"), nullable=True
     )
-    step_name = Column(String(255), nullable=True)
+    step_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Frozen structured input parameters captured at creation (was
     # ``input_snapshot`` — renamed to drop the overloaded "snapshot" word;
     # input *files* now live in TaskRunArtifact with action_type='start').
-    input_params = Column(JSONB, nullable=False, default=dict)
+    input_params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Backwards-compat alias: some code paths (and tests) still reference
     # `input_snapshot` as the attribute name. Provide a read-only alias to
     # maintain compatibility while the underlying storage uses `input_params`.
     @property
     def input_snapshot(self) -> dict[str, Any]:
-        return cast("dict[str, Any]", self.input_params or {})
+        return self.input_params or {}
 
     # Lifecycle: status is the active vs terminal flag; outcome is the
     # terminal disposition, set only when status='terminal' (CHECK enforced
     # at the DB level).
-    status: Column[str] = Column(_TASK_RUN_STATUS, nullable=False, default="pending")
-    outcome: Column[str] = Column(_TASK_RUN_OUTCOME, nullable=True)
+    status: Mapped[Any] = mapped_column(_TASK_RUN_STATUS, nullable=False, default="pending")
+    outcome: Mapped[Any | None] = mapped_column(_TASK_RUN_OUTCOME, nullable=True)
 
     # Current holder — denormalised onto the row (replaces the
     # task_run_assignments chain + current_assignment_id pointer). The
     # full holder history is reconstructed from start/delegate/escalate
     # events.
-    assigned_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    assigned_team_slug = Column(String(255), nullable=True)
-    project_lead_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    assigned_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    assigned_team_slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    project_lead_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    due_at = Column(DateTime(timezone=True), nullable=True)
-    original_due_at = Column(DateTime(timezone=True), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    original_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Frozen copy of the tool's HumanConfig captured at creation (was the
     # ``snapshot_*`` columns).
-    require_attachments = Column(Boolean, nullable=False, default=False)
-    cfg_due_in_hours = Column(Integer, nullable=True)
-    assignment_type = Column(String(50), nullable=False)
-    priority = Column(String(20), nullable=False, default="medium")
+    require_attachments: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cfg_due_in_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assignment_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
 
     # 'start' action — who created/started the run and when (replaces the
     # generic created_by / created_at).
-    started_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    started_at = Column(
+    started_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
@@ -171,11 +171,11 @@ class TaskRun(Base, UUIDMixin):
     # here for cheap list/detail rendering. ``output_data`` is the
     # structured payload validated against the tool's output_schema.
     # Output *files* live in TaskRunArtifact (action_type='finish').
-    output_data = Column(JSONB, nullable=False, default=dict)
-    finished_by = Column(String(36), ForeignKey("users.id"), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    output_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    finished_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
@@ -227,16 +227,16 @@ class TaskRunEvent(Base, UUIDMixin):
 
     __tablename__ = "task_run_events"
 
-    task_run_id = Column(String(36), ForeignKey("task_runs.id", ondelete="CASCADE"), nullable=False)
-    action_type = Column(String(50), nullable=False)
-    parent_event_id = Column(
+    task_run_id: Mapped[str] = mapped_column(String(36), ForeignKey("task_runs.id", ondelete="CASCADE"), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    parent_event_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task_run_events.id", ondelete="SET NULL"), nullable=True
     )
-    actor_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    actor_type: Column[str] = Column(_TASK_RUN_ACTOR_TYPE, nullable=False)
-    message = Column(Text, nullable=True)
-    payload = Column(JSONB, nullable=False, default=dict)
-    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    actor_type: Mapped[Any] = mapped_column(_TASK_RUN_ACTOR_TYPE, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     task_run = relationship("TaskRun", back_populates="events", foreign_keys=[task_run_id])
     actor = relationship("User", foreign_keys=[actor_user_id])
@@ -270,27 +270,27 @@ class TaskRunArtifact(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "task_run_artifacts"
 
-    task_run_id = Column(String(36), ForeignKey("task_runs.id", ondelete="CASCADE"), nullable=True)
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False)
-    action_type = Column(String(50), nullable=False)
-    event_id = Column(
+    task_run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("task_runs.id", ondelete="CASCADE"), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task_run_events.id", ondelete="SET NULL"), nullable=True
     )
 
-    name = Column(String(255), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_size = Column(BigInteger, nullable=False)
-    content_type = Column(String(100), nullable=False, default="application/octet-stream")
-    checksum_sha256 = Column(String(64), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False, default="application/octet-stream")
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    storage_bucket = Column(String(255), nullable=False)
-    storage_key = Column(String(1024), nullable=False)
+    storage_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
 
     # staged → bound (for start inputs); active (for outputs/updates).
-    status = Column(String(20), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
 
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    metadata_: Mapped[Any] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     task_run = relationship("TaskRun", back_populates="artifacts", foreign_keys=[task_run_id])
     event = relationship("TaskRunEvent", back_populates="artifacts", foreign_keys=[event_id])

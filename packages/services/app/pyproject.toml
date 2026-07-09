@@ -1,0 +1,19 @@
+[project]
+name = "app-service"
+version = "0.1.0"
+description = "Apps registry + runtime proxy service for TechneOS"
+requires-python = ">=3.12"
+dependencies = [
+    "core",
+    "docker>=7.1.0",
+]
+
+[tool.uv.sources]
+core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app_service"]

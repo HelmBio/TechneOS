@@ -14,7 +14,7 @@ The manifest is a JSON array of objects::
 
 Read from a path argument or stdin::
 
-    uv run python -m core.database.register_compute_artifacts deploy/build-artifacts.json
+    uv run python -m core.database.register_compute_artifacts build-artifacts.json
     uv run python -m core.database.register_compute_artifacts < manifest.json
 
 Idempotent: upserts on (kind, name, version, registry_url), matching the
@@ -65,8 +65,8 @@ async def _upsert(session: AsyncSession, entry: dict[str, Any]) -> str:
         if entry.get("source_commit_sha"):
             existing.source_commit_sha = entry["source_commit_sha"]
         if existing.status == "deleted":
-            existing.status = "available"  # type: ignore[assignment]
-        existing.published_at = now  # type: ignore[assignment]
+            existing.status = "available"
+        existing.published_at = now
         return "updated"
 
     session.add(

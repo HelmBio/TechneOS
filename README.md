@@ -6,14 +6,14 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — foundation layer.**
+> **Status — service tier.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
-> architecture design, a runnable local development environment, and the
-> foundation Python layer: the shared **core** library, the **tool-runtime**
-> package, and the database migrations. The API gateway, domain services, CLI,
-> web portal, execution layer, and deployment assets are introduced in
-> subsequent commits.
+> architecture design, a runnable local development environment, the foundation
+> Python layer (shared **core** library, **tool-runtime**, database migrations),
+> and the **service tier**: the API gateway, the eight domain microservices, and
+> the built-in Platform Assistant. The CLI, web portal, execution layer, and
+> deployment assets are introduced in subsequent commits.
 
 ## Architecture
 
@@ -36,6 +36,9 @@ The target technology stack:
 | [`docs/architecture.md`](docs/architecture.md) | Full architecture design document |
 | `packages/core/` | Shared library: SQLAlchemy models, Pydantic schemas, auth, storage, cache, events, agent bridge — every service builds on it |
 | `packages/tool-runtime/` | Tool execution runtime (runner + I/O contract); builds the `techneos/tool-runtime` image. Foundation package with no intra-workspace dependencies |
+| `packages/gateway/` | API gateway (`:8000`) — reverse proxy, auth middleware, rate limiting, routing; the front door for the portal, CLI, and REST clients |
+| `packages/services/` | The eight domain microservices: `auth` (`:8001`), `dataset` (`:8002`), `tool` (`:8003`), `pipeline` (`:8004`), `agent` (`:8005`), `notification` (`:8006`), `app` (`:8007`), `task` (`:8008`) |
+| `packages/platform-assistant/` | The built-in Platform Assistant agent (PydanticAI); the agent-service depends on it |
 | `migrations/` + `alembic.ini` | Alembic setup with the squashed initial schema baseline |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak) |
 | `Makefile` | Developer command shortcuts (`make help`) |
@@ -51,13 +54,14 @@ The target technology stack:
 ```bash
 cp .env.example .env   # defaults work for local dev
 make up                # start PostgreSQL, MinIO, Valkey, DevPI, Keycloak
-make install           # install the Python workspace (core, tool-runtime)
+make install           # install the Python workspace
 make migrate           # apply the database schema
+make dev-gateway       # run the API gateway (:8000); make dev-auth, dev-dataset, … for services
 ```
 
-Run `make help` to see all available targets (lint, format, typecheck, migration
-helpers, etc.). Node.js 20+ becomes a prerequisite once the web portal is added
-in a later commit.
+Run `make help` to see all available targets (per-service `dev-*` runners, lint,
+format, typecheck, migration helpers, etc.). Node.js 20+ becomes a prerequisite
+once the web portal is added in a later commit.
 
 ## Documentation
 

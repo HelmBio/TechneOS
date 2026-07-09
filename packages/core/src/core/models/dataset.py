@@ -1,10 +1,10 @@
 """Dataset and DatasetVersion models."""
 
-from typing import cast
+from typing import Any, cast
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.user import Org, User  # noqa: F401  — register for relationship resolution
@@ -20,34 +20,34 @@ class Dataset(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "datasets"
 
-    name = Column(String(255), nullable=False, index=True)
-    slug = Column(String(255), nullable=False, unique=True, index=True)
-    description = Column(Text, nullable=True)
-    data_type = Column(
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="tabular",
         comment="tabular | molecular | sequence | image | other",
     )
-    file_format = Column(
+    file_format: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         default="csv",
         comment="csv | tsv | sdf | pdb | fasta | parquet | other",
     )
-    tags = Column(JSONB, nullable=False, default=list)
-    data_schema = Column(
+    tags: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    data_schema: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="JSON Schema (draft) describing the expected structure of data files",
     )
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
-    is_public = Column(Boolean, default=False, nullable=False)
+    metadata_: Mapped[Any] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     versions = relationship(
@@ -123,45 +123,45 @@ class DatasetVersion(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "dataset_versions"
 
-    dataset_id = Column(
+    dataset_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    version = Column(Integer, nullable=False)  # monotonically increasing per dataset
-    description = Column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)  # monotonically increasing per dataset
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Object store bucket (same for all files in a version)
-    storage_bucket = Column(String(255), nullable=False)
+    storage_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Multiple files within this version (array of {file_name, file_size, content_type, storage_key, checksum_sha256})
-    files = Column(JSONB, nullable=False, default=list)
+    files: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
 
     # Transfer tracking
-    transfer_method = Column(
+    transfer_method: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         comment="How files were added: 'upload' (direct upload) or 'transfer' (copied from another bucket)",
     )
-    source_bucket_id = Column(
+    source_bucket_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("object_store_buckets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    source_files = Column(
+    source_files: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Original file paths/keys in the source bucket (list of strings)",
     )
 
     # Status
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum("uploading", "processing", "ready", "failed", name="dataset_version_status"),
         nullable=False,
         default="uploading",
     )
 
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     dataset = relationship("Dataset", back_populates="versions")

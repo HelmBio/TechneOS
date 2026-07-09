@@ -207,16 +207,16 @@ class Settings(BaseSettings):
     dataset_service_url: str = "http://localhost:8002"
     tool_service_port: int = 8003
     tool_service_url: str = "http://localhost:8003"
-    task_service_port: int = 8010
-    task_service_url: str = "http://localhost:8010"
+    task_service_port: int = 8008
+    task_service_url: str = "http://localhost:8008"
     pipeline_service_port: int = 8004
     pipeline_service_url: str = "http://localhost:8004"
-    agent_service_port: int = 8006
-    agent_service_url: str = "http://localhost:8006"
-    notification_service_port: int = 8008
-    notification_service_url: str = "http://localhost:8008"
-    app_service_port: int = 8009
-    app_service_url: str = "http://localhost:8009"
+    agent_service_port: int = 8005
+    agent_service_url: str = "http://localhost:8005"
+    notification_service_port: int = 8006
+    notification_service_url: str = "http://localhost:8006"
+    app_service_port: int = 8007
+    app_service_url: str = "http://localhost:8007"
 
     # --- Apps ---
     # Backend used by the App deployer worker to run embedded App containers.

@@ -11,9 +11,11 @@ compute runs on" concept) and to avoid confusion with ``tool_run_artifacts``,
 which stores per-run input/output files.
 """
 
+from datetime import datetime
+from typing import Any
+
 from sqlalchemy import (
     BigInteger,
-    Column,
     DateTime,
     Enum,
     ForeignKey,
@@ -21,6 +23,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models import Base, TimestampMixin, UUIDMixin
 
@@ -30,12 +33,12 @@ class ComputeArtifact(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "compute_artifacts"
 
-    kind: Column[str] = Column(
+    kind: Mapped[str] = mapped_column(
         Enum("wheel", "docker_image", name="artifact_kind"),
         nullable=False,
         index=True,
     )
-    origin: Column[str] = Column(
+    origin: Mapped[str] = mapped_column(
         Enum(
             "catalog",
             "platform",
@@ -48,44 +51,44 @@ class ComputeArtifact(Base, UUIDMixin, TimestampMixin):
         comment="Provenance — 'catalog' (registered tool/agent/app) or 'platform' "
         "(service/runtime image the platform builds); lets the admin UI filter",
     )
-    name = Column(
+    name: Mapped[str] = mapped_column(
         String(512),
         nullable=False,
         comment="wheel package name OR image repository, e.g. 'techneos/dataset-profiler'",
     )
-    version = Column(
+    version: Mapped[str] = mapped_column(
         String(256),
         nullable=False,
         comment="wheel version OR image tag",
     )
-    registry_url = Column(
+    registry_url: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,
         comment="PyPI index URL or ECR registry; null for local/dev",
     )
-    digest = Column(
+    digest: Mapped[str | None] = mapped_column(
         String(256),
         nullable=True,
         comment="sha256 of the wheel file or image manifest digest",
     )
-    size_bytes = Column(BigInteger, nullable=True)
-    source_commit_sha = Column(String(64), nullable=True)
-    source_repo = Column(String(255), nullable=True)
-    status: Column[str] = Column(
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_repo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
         Enum("available", "deprecated", "deleted", name="artifact_status"),
         nullable=False,
         default="available",
         index=True,
     )
-    metadata_ = Column(
+    metadata_: Mapped[Any] = mapped_column(
         "metadata",
         JSONB,
         nullable=False,
         default=dict,
         comment="extra: python tags, arch/platform, discovered entry_points, ...",
     )
-    published_at = Column(DateTime(timezone=True), nullable=True)
-    published_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

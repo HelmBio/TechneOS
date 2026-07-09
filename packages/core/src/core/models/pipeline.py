@@ -1,10 +1,11 @@
 """Pipeline definition and execution models."""
 
+from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.tool import ToolVersion  # noqa: F401  — register for FK resolution
@@ -25,46 +26,46 @@ class Pipeline(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "pipelines"
 
-    name = Column(String(255), nullable=False, index=True)
-    slug = Column(String(255), nullable=False, unique=True, index=True)
-    description = Column(Text, nullable=True)
-    category = Column(
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="general",
         comment="docking | scoring | admet | ml | general | molecular-dynamics | quantum-chemistry | cheminformatics | bioinformatics | machine-learning | data-processing | other",
     )
-    pipeline_type: Column[str] = Column(
+    pipeline_type: Mapped[str] = mapped_column(
         Enum("compute", "interactive", "hybrid", name="pipeline_type"),
         nullable=False,
         default="compute",
         comment="compute | interactive | hybrid",
     )
-    readme = Column(Text, nullable=True, comment="Pipeline documentation in Markdown")
+    readme: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Pipeline documentation in Markdown")
 
-    tags = Column(JSONB, nullable=False, default=list)
-    is_public = Column(Boolean, default=False, nullable=False)
+    tags: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Canonical DAG shape. The shape is immutable once the pipeline
     # has runs; structural change requires a fork. Steps here are shape-only:
     # {name, tool_slug, depends_on, inputs} — no tool_version / parameters (those
     # are per-version bindings). parameters_schema is the run-I/O contract, with
     # run-input defaults carried as JSON-Schema `default` on each property.
-    steps = Column(JSONB, nullable=False, default=list)
-    edges = Column(JSONB, nullable=False, default=list)
-    parameters_schema = Column(JSONB, nullable=False, default=dict)
+    steps: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    edges: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    parameters_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     # SHA-256 of the canonical topology — the pipeline's structural identity.
     # Computed by core.pipeline_topology.topology_hash.
-    topology_hash = Column(String(64), nullable=True, index=True)
+    topology_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     # Lineage: set when this pipeline was created by forking another to evolve
     # its topology while keeping continuity.
-    forked_from = Column(String(36), ForeignKey("pipelines.id"), nullable=True)
+    forked_from: Mapped[str | None] = mapped_column(String(36), ForeignKey("pipelines.id"), nullable=True)
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     versions = relationship(
@@ -159,20 +160,20 @@ class PipelineVersion(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "pipeline_versions"
 
-    pipeline_id = Column(
+    pipeline_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("pipelines.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    version = Column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Per-version binding over the parent's shape:
     # { step_name -> { tool_version: int|null, parameters: {...} } }
-    bindings = Column(JSONB, nullable=False, default=dict)
+    bindings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Status lifecycle
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum(
             "draft",
             "testing",
@@ -185,9 +186,9 @@ class PipelineVersion(Base, UUIDMixin, TimestampMixin):
     )
 
     # Release info
-    changelog = Column(Text, nullable=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    changelog: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     runs = relationship("PipelineRun", back_populates="version", cascade="all, delete-orphan")
@@ -228,9 +229,9 @@ class PipelineRun(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "pipeline_runs"
 
-    name = Column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    version_id = Column(
+    version_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("pipeline_versions.id", ondelete="CASCADE"),
         nullable=False,
@@ -238,7 +239,7 @@ class PipelineRun(Base, UUIDMixin, TimestampMixin):
     )
 
     # Runtime
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum(
             "pending",
             "queued",
@@ -251,23 +252,23 @@ class PipelineRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default="pending",
     )
-    parameters = Column(JSONB, nullable=False, default=dict)
-    error_message = Column(Text, nullable=True)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timing
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # External orchestrator reference
-    airflow_dag_id = Column(String(255), nullable=True)
-    airflow_run_id = Column(String(255), nullable=True)
+    airflow_dag_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    airflow_run_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Who launched it
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    submitted_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    submitted_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
 
     # Restart lineage (nullable — only set when this run was created via restart)
-    restarted_from = Column(String(36), ForeignKey("pipeline_runs.id"), nullable=True)
+    restarted_from: Mapped[str | None] = mapped_column(String(36), ForeignKey("pipeline_runs.id"), nullable=True)
 
     # Relationships
     version = relationship("PipelineVersion", back_populates="runs")
@@ -284,16 +285,16 @@ class PipelineStepRun(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "pipeline_step_runs"
 
-    run_id = Column(
+    run_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    step_name = Column(String(255), nullable=False)
-    tool_version_id = Column(String(36), ForeignKey("tool_versions.id"), nullable=True)
+    step_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tool_version_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("tool_versions.id"), nullable=True)
 
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum(
             "pending",
             "running",
@@ -307,12 +308,12 @@ class PipelineStepRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default="pending",
     )
-    parameters = Column(JSONB, nullable=False, default=dict)
-    outputs = Column(JSONB, nullable=False, default=dict)
-    error_message = Column(Text, nullable=True)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    outputs: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     run = relationship("PipelineRun", back_populates="steps")
@@ -332,21 +333,21 @@ class PipelineRunArtifact(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "pipeline_run_artifacts"
 
-    run_id = Column(
+    run_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    io_type = Column(
+    io_type: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="output",
         comment="'input' or 'output'",
     )
-    step_name = Column(String(255), nullable=True, comment="null if pipeline-level artifact")
-    name = Column(String(255), nullable=False)
-    artifact_type = Column(
+    step_name: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="null if pipeline-level artifact")
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="file",
@@ -354,15 +355,15 @@ class PipelineRunArtifact(Base, UUIDMixin, TimestampMixin):
     )
 
     # Object store reference
-    storage_bucket = Column(String(255), nullable=False)
-    storage_key = Column(String(1024), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_size = Column(Integer, nullable=False)
-    content_type = Column(String(100), nullable=False, default="application/octet-stream")
-    checksum_sha256 = Column(String(64), nullable=True)
+    storage_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False, default="application/octet-stream")
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Structured metadata for indexing/search
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    metadata_: Mapped[Any] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     # Relationships
     run = relationship("PipelineRun", back_populates="artifacts")

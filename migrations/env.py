@@ -8,7 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from core.config import get_settings
 from core.models import Base
 
-# Phase 4 models
+# models (imported so Alembic autogenerate sees them)
 from core.models.agent import AgentDefinition, AgenticRun, AgenticTask  # noqa: F401
 from core.models.app import App, AppLaunch  # noqa: F401  app models
 from core.models.artifact import ComputeArtifact  # noqa: F401

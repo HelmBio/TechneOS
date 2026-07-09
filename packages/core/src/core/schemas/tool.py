@@ -327,7 +327,7 @@ class ToolVersionContentReplace(BaseModel):
 
 
 class RuntimeValidationRequest(BaseModel):
-    """Runtime validation request — pypi-only since Phase 4 removed module."""
+    """Runtime validation request — pypi tools only."""
 
     package_name: str | None = Field(
         default=None, max_length=255, description="Python package name"

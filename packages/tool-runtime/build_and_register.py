@@ -146,8 +146,8 @@ def main() -> None:
         return
 
     print("=== Recording image in the artifact inventory ===")
-    # Record the bare repo + separate registry_url (same convention as the
-    # platform images in deploy/build-and-push.sh) so the manual and CI paths
+    # Record the bare repo + separate registry_url (same convention the CI
+    # build/push script uses for platform images) so the manual and CI paths
     # upsert the same inventory row. Catalog tools instead store the env-aware
     # image_ref because their ToolVersion.docker_image must match for validation;
     # the runtime image backs no ToolVersion, so the bare form is unambiguous.

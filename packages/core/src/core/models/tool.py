@@ -2,9 +2,9 @@
 
 from typing import Any, cast
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.user import Org, User  # noqa: F401  — register for relationship resolution
@@ -26,33 +26,33 @@ class Tool(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "tools"
 
-    name = Column(String(255), nullable=False, index=True)
-    slug = Column(String(255), nullable=False, unique=True, index=True)
-    description = Column(Text, nullable=True)
-    category = Column(
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="general",
         comment="docking | scoring | admet | ml | general | molecular-dynamics | quantum-chemistry | cheminformatics | bioinformatics | machine-learning | data-processing | other",
     )
-    tool_type: Column[str] = Column(
+    tool_type: Mapped[str] = mapped_column(
         Enum("container", "module", "api", "pypi", "human", name="tool_type"),
         nullable=False,
         default="container",
         comment="container | module | pypi | human",
     )
-    tags = Column(JSONB, nullable=False, default=list)
-    is_public = Column(Boolean, default=False, nullable=False)
+    tags: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Tool-level documentation in Markdown. Moved here from tool_versions
     # because README describes the tool (what it does), not a specific
     # release; per-release notes live in tool_versions.changelog.
-    readme = Column(Text, nullable=True, comment="Tool documentation in Markdown")
+    readme: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Tool documentation in Markdown")
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     versions = relationship("ToolVersion", back_populates="tool", cascade="all, delete-orphan")
@@ -123,23 +123,21 @@ class ToolVersion(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "tool_versions"
 
-    tool_id = Column(
+    tool_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tools.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    version = Column(Integer, nullable=False)  # monotonically increasing per tool
+    version: Mapped[int] = mapped_column(Integer, nullable=False)  # monotonically increasing per tool
 
-    # NOTE: tool_script + script_environment columns were dropped by migration
-    # y6z7a8b9c012 (the module tool_type's runtime path was removed in Phase 4;
-    # the columns followed one release cycle later). Pypi-type version metadata
-    # now lives entirely in the pypi_configs side-table.
+    # NOTE: pypi-type version metadata lives entirely in the pypi_configs
+    # side-table.
 
     # Schema for pipeline validation — JSON (not JSONB) to preserve key order
-    input_schema = Column(JSON, nullable=False, default=dict)
-    output_schema = Column(JSON, nullable=False, default=dict)
-    parameters_schema = Column(JSON, nullable=False, default=dict)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    output_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    parameters_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     # Resource requirements
-    resource_requirements = Column(
+    resource_requirements: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
@@ -148,19 +146,19 @@ class ToolVersion(Base, UUIDMixin, TimestampMixin):
 
     # Release info — per-version notes about what changed in this version.
     # Tool-level documentation lives in tools.readme.
-    changelog = Column(
+    changelog: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Per-release notes — what changed in this version"
     )
 
     # Status
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum("draft", "testing", "active", "deprecated", name="tool_version_status"),
         nullable=False,
         default="draft",
     )
 
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Relationships
     tool = relationship("Tool", back_populates="versions")
@@ -263,14 +261,14 @@ class ContainerConfig(Base, TimestampMixin):
 
     __tablename__ = "tool_docker_configs"
 
-    tool_version_id = Column(
+    tool_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tool_versions.id", ondelete="CASCADE"), primary_key=True
     )
-    docker_image = Column(String(512), nullable=False)
-    docker_tag = Column(String(128), nullable=False, default="latest")
+    docker_image: Mapped[str] = mapped_column(String(512), nullable=False)
+    docker_tag: Mapped[str] = mapped_column(String(128), nullable=False, default="latest")
     # Lineage link to the inventory row; the string columns above remain
     # authoritative for execution (a version's definition freezes on first run).
-    artifact_id = Column(
+    artifact_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("compute_artifacts.id", ondelete="SET NULL"), nullable=True
     )
 
@@ -282,19 +280,19 @@ class PypiConfig(Base, TimestampMixin):
 
     __tablename__ = "tool_pypi_configs"
 
-    tool_version_id = Column(
+    tool_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tool_versions.id", ondelete="CASCADE"), primary_key=True
     )
-    package_name = Column(String(255), nullable=False)
-    package_version = Column(String(64), nullable=False)
-    entry_point = Column(String(255), nullable=False)
-    package_index_url = Column(String(512), nullable=True)
+    package_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_point: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_index_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Lineage link to the inventory row; the package_name/version columns above
     # remain authoritative for execution (a version's definition freezes on run).
-    artifact_id = Column(
+    artifact_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("compute_artifacts.id", ondelete="SET NULL"), nullable=True
     )
-    agent_tools = Column(
+    agent_tools: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment=(
@@ -318,44 +316,44 @@ class HumanConfig(Base, TimestampMixin):
 
     __tablename__ = "tool_human_configs"
 
-    tool_version_id = Column(
+    tool_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tool_versions.id", ondelete="CASCADE"), primary_key=True
     )
-    assignment_type = Column(
+    assignment_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="team",
         comment="'user' for a specific user, 'team' for a team",
     )
-    default_user_email = Column(
+    default_user_email: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Default user assignee email (mutually exclusive with default_team_slug)",
     )
-    default_team_slug = Column(
+    default_team_slug: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Default team assignee (mutually exclusive with default_user_email)",
     )
-    due_in_hours = Column(
+    due_in_hours: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         default=72,
         comment="Default due time in hours from assignment creation",
     )
-    require_attachments = Column(
+    require_attachments: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         comment="Whether submission requires file attachments",
     )
-    priority = Column(
+    priority: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="medium",
         comment="Task priority: low, medium, high, or urgent",
     )
-    default_project_lead_email = Column(
+    default_project_lead_email: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Optional project lead email (resolved to user UUID at task run creation)",
@@ -372,8 +370,8 @@ class HumanConfig(Base, TimestampMixin):
         should read ``default_user_email`` / ``default_team_slug`` directly.
         """
         if self.assignment_type == "user":
-            return cast("str | None", self.default_user_email)
-        return cast("str | None", self.default_team_slug)
+            return self.default_user_email
+        return self.default_team_slug
 
 
 # Register ToolRun with SQLAlchemy's mapper registry. The string reference

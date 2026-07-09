@@ -19,9 +19,12 @@ for uploaded/pasted inputs, or ``{"type": "dataset", "ref": "slug:vN"}``
 for platform datasets.
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, String, Text
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.models import Base, TimestampMixin, UUIDMixin
 from core.models.tool import ToolVersion  # noqa: F401  — register for FK resolution
@@ -33,14 +36,14 @@ class ToolRun(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "tool_runs"
 
-    tool_version_id = Column(
+    tool_version_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("tool_versions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    status: Column[str] = Column(
+    status: Mapped[str] = mapped_column(
         Enum(
             "pending",
             "queued",
@@ -53,26 +56,26 @@ class ToolRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default="pending",
     )
-    parameters = Column(JSONB, nullable=False, default=dict)
-    outputs = Column(JSONB, nullable=False, default=dict)
-    error_message = Column(Text, nullable=True)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    outputs: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # External orchestrator reference
-    airflow_dag_id = Column(String(255), nullable=True)
-    airflow_run_id = Column(String(255), nullable=True)
+    airflow_dag_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    airflow_run_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Persisted logs — set when the run reaches a terminal state
-    log_storage_key = Column(String(1024), nullable=True)
+    log_storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Ownership
-    org_id = Column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
-    submitted_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id"), nullable=False, index=True)
+    submitted_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
 
     # Restart lineage — set when this run was created via /restart
-    restarted_from = Column(String(36), ForeignKey("tool_runs.id"), nullable=True)
+    restarted_from: Mapped[str | None] = mapped_column(String(36), ForeignKey("tool_runs.id"), nullable=True)
 
     # Relationships
     tool_version = relationship(
@@ -97,30 +100,30 @@ class ToolRunArtifact(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "tool_run_artifacts"
 
-    tool_run_id = Column(
+    tool_run_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("tool_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    io_type = Column(
+    io_type: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         comment="'input' or 'output'",
     )
 
-    file_name = Column(String(255), nullable=False)
-    file_size = Column(BigInteger, nullable=False)
-    content_type = Column(String(100), nullable=False, default="application/octet-stream")
-    checksum_sha256 = Column(String(64), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False, default="application/octet-stream")
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    storage_bucket = Column(String(255), nullable=False)
-    storage_key = Column(String(1024), nullable=False)
+    storage_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
 
     # Lifecycle: 'active' for all rows (no longer separate staged/bound)
-    status = Column(String(20), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
 
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    metadata_: Mapped[Any] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     run = relationship("ToolRun", back_populates="artifacts")

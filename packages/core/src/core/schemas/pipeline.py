@@ -126,7 +126,7 @@ class PipelineVersionCreate(BaseModel):
     """Create a new version = a binding over the pipeline's fixed shape.
 
     Preferred form: ``bindings`` = ``{step_name -> {tool_version, parameters}}``.
-    Legacy ``steps`` (full DAG) is still accepted for backward compatibility; the
+    The full-DAG ``steps`` form is also accepted; the
     binding is derived from it and its shape must match the parent's.
     """
 
@@ -151,8 +151,8 @@ class PipelineVersionResponse(TimestampSchema):
     version: int
     # Per-version binding ({step_name -> {tool_version, parameters}}).
     bindings: dict[str, Any] = Field(default_factory=dict)
-    # Effective DAG (parent shape merged with this version's bindings). Computed
-    # for backward compatibility so the run dialog/graph keep working.
+    # Effective DAG (parent shape merged with this version's bindings), computed
+    # so the run dialog/graph can render.
     steps: list[dict[str, Any]] = Field(default_factory=list)
     edges: list[dict[str, Any]] = Field(default_factory=list)
     parameters_schema: dict[str, Any] = Field(default_factory=dict)

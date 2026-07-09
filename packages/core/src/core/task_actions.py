@@ -16,7 +16,7 @@ default and the validation fallback used when the row is absent.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +45,7 @@ async def get_task_action_types(session: AsyncSession) -> list[dict[str, Any]]:
     """Return the platform action-type list, falling back to the default."""
     setting = await session.get(PlatformSetting, TASK_ACTION_TYPES_KEY)
     if setting is not None and setting.value:
-        return list(setting.value)
+        return list(cast("list[dict[str, Any]]", setting.value))
     return [dict(a) for a in DEFAULT_TASK_ACTION_TYPES]
 
 

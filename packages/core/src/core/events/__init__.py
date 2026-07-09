@@ -1,7 +1,7 @@
 """Simple event bus backed by Valkey pub/sub.
 
 Used for inter-service communication (e.g., pipeline status updates).
-For Phase 1, this is a lightweight abstraction. In production, you might
+This is a lightweight abstraction. In production, you might
 use a proper message broker (RabbitMQ, NATS, etc.)
 """
 
