@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task clean
+.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -77,6 +77,11 @@ dev-app: ## Run app service in dev mode
 
 dev-task: ## Run task service in dev mode
 	uv run --package task-service uvicorn task_service.main:app --reload --port 8008
+
+# --- CLI ---
+
+dev-cli: ## Run the CLI (usage: make dev-cli cmd="datasets list")
+	uv run python -m cli.main $(cmd)
 
 # --- Cleanup ---
 

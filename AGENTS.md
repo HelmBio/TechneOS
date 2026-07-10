@@ -10,10 +10,11 @@ Notes & Gotchas** captures per-feature implementation details.
 > command, convention, or subsystem, update the relevant section in the same
 > commit. Today the repo contains the architecture design, a local Docker
 > development stack, the foundation Python layer (shared **core** library,
-> **tool-runtime**, Alembic **migrations**), and the **service tier**: the API
-> gateway, the eight domain microservices, and the Platform Assistant. There is
-> no CLI, web portal, or test suite yet — those land in subsequent commits, and
-> the rules below that reference them take effect as they arrive.
+> **tool-runtime**, Alembic **migrations**), the **service tier** (API gateway,
+> eight domain microservices, Platform Assistant), and the **client tier**: the
+> `techneos` CLI and the `management` toolkit. There is no web portal, execution
+> layer, or test suite yet — those land in subsequent commits, and the rules
+> below that reference them take effect as they arrive.
 
 ---
 
@@ -106,6 +107,22 @@ non-platform agents register through the `techneos.agents` group. The
 agent-service pip-installs those packages from the configured package index
 (DevPI locally) at startup, then discovers their entry points — so `core` carries
 no hard dependency on optional tool/agent content.
+
+## Client packages (CLI & management)
+
+Two client packages talk to the platform **only through the gateway REST API**,
+never the database directly:
+
+- `packages/cli` — the `techneos` end-user command (Typer/Rich). Run it with
+  `make dev-cli cmd="…"` or `uv run techneos …`.
+- `packages/management` — the admin/registration toolkit, published as the
+  `techneos-management` wheel. It holds the resource-removal scripts and the
+  `management.registration` helpers (auth, environment/URL resolution, build +
+  register orchestration) that every package's `build_and_register.py` imports.
+  It's a **published dependency**: the platform's own publish scripts and
+  externally-authored catalog packages both import `management.registration`, so
+  its distribution name and import path are a stable contract — don't rename them
+  casually.
 
 ## Keycloak DB auto-creation
 

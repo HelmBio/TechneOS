@@ -20,7 +20,13 @@ members = [
     "packages/services/agent",
     "packages/services/notification",
     "packages/services/app",
+    "packages/cli",
+    "packages/management",
 ]
+# NOTE: catalog content (tools, agents, datasets, pipelines, apps) is authored
+# in a separate repository — it depends on the platform only via the published
+# techneos-tool-runtime / techneos-management wheels and the gateway REST API,
+# never as a workspace member.
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -34,7 +40,9 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-exclude = ["migrations/versions/*"]
+# build_and_register.py files are deploy-time operational scripts (not part of
+# the wheels); excluded from lint/typecheck here — same as the mypy exclude.
+exclude = ["migrations/versions/*", "**/build_and_register.py"]
 
 [tool.ruff.lint]
 select = [
@@ -60,10 +68,11 @@ ignore = [
 "**/main.py" = ["T201"]  # print is fine in startup/shutdown
 "**/events.py" = ["T201"]  # print for dev-visible event logging
 "**/crud/versions.py" = ["T201"]  # print for dev-visible event logging
-"**/build_and_register.py" = ["T201"]  # build/register scripts print progress
+"packages/cli/**" = ["T201"]  # CLI prints to terminal
+"packages/management/**" = ["T201"]  # management scripts print to terminal
 
 [tool.ruff.lint.isort]
-known-first-party = ["core", "gateway", "auth_service", "dataset_service", "tool_service", "task_service", "pipeline_service", "agent_service", "notification_service", "techneos_tool_runtime"]
+known-first-party = ["core", "gateway", "auth_service", "dataset_service", "tool_service", "task_service", "pipeline_service", "agent_service", "notification_service", "cli", "management", "techneos_tool_runtime"]
 
 [tool.mypy]
 python_version = "3.12"
