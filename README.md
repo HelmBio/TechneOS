@@ -6,15 +6,16 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — services + clients.**
+> **Status — services + clients + web portal.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
 > architecture design, a runnable local development environment, the foundation
 > Python layer (shared **core** library, **tool-runtime**, database migrations),
 > the **service tier** (API gateway, eight domain microservices, built-in
-> Platform Assistant), and the **client tier**: the `techneos` **CLI** and the
-> **management** toolkit (admin/registration + wheel publishing). The web portal,
-> execution layer, and deployment assets are introduced in subsequent commits.
+> Platform Assistant), the **client tier**: the `techneos` **CLI** and the
+> **management** toolkit (admin/registration + wheel publishing), and the
+> **web portal** (Next.js). The execution layer and deployment assets are
+> introduced in subsequent commits.
 
 ## Architecture
 
@@ -42,16 +43,17 @@ The target technology stack:
 | `packages/platform-assistant/` | The built-in Platform Assistant agent (PydanticAI); the agent-service depends on it |
 | `packages/cli/` | The `techneos` command-line client (Typer/Rich/httpx) — talks to the platform through the gateway REST API |
 | `packages/management/` | Admin/registration toolkit published as the `techneos-management` wheel: resource-removal scripts and the registration helpers used by build/publish scripts |
-| `migrations/` + `alembic.ini` | Alembic setup with the squashed initial schema baseline |
+| `packages/portal/` | The web portal (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) — the primary UI for datasets, tools, pipelines, agents, apps, tasks, and admin; talks to the gateway REST API only |
+| `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak) |
 | `Makefile` | Developer command shortcuts (`make help`) |
-| `pyproject.toml` | Root uv workspace (all Python packages; the web portal and execution layer are added in later commits) |
+| `pyproject.toml` | Root uv workspace (Python packages only — the web portal is a separate npm package; the execution layer is added in a later commit) |
 | `.env.example` | Environment variable template |
 | `AGENTS.md` | Conventions & subsystem notes for coding agents |
 
 ## Getting started
 
-**Prerequisites:** Docker & Docker Compose, Python 3.12, and
+**Prerequisites:** Docker & Docker Compose, Python 3.12, Node.js 20+, and
 [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
@@ -59,13 +61,15 @@ cp .env.example .env   # defaults work for local dev
 make up                # start PostgreSQL, MinIO, Valkey, DevPI, Keycloak
 make install           # install the Python workspace
 make migrate           # apply the database schema
-make dev-gateway       # run the API gateway (:8000); make dev-auth, dev-dataset, … for services
-make dev-cli cmd="datasets list"   # run the techneos CLI against the gateway
+make install-portal    # install the web portal's npm dependencies
+make dev-all-portal    # run every backend service + the web portal (localhost:3000)
 ```
 
-Run `make help` to see all available targets (per-service `dev-*` runners, the
-CLI, lint, format, typecheck, migration helpers, etc.). Node.js 20+ becomes a
-prerequisite once the web portal is added in a later commit.
+Or run pieces individually: `make dev-gateway` (API gateway, `:8000`),
+`make dev-auth` / `dev-dataset` / … for the other services, `make dev-portal`
+for just the web portal, and `make dev-cli cmd="datasets list"` for the CLI.
+`make dev-all` / `make dev-stop` start/stop the whole backend via
+[`bin/dev.sh`](bin/dev.sh). Run `make help` to see every target.
 
 ## Documentation
 

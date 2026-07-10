@@ -1,0 +1,16 @@
+.env
+.env.local
+.env.development
+.git
+*.md
+.gitignore
+.eslintrc*
+.prettier*
+.editorconfig
+.husky
+Dockerfile
+.dockerignore
+node_modules
+.next
+coverage
+__tests__

@@ -1,0 +1,196 @@
+/* VS Code-like markdown preview styles */
+.markdown-preview {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #24292e;
+}
+
+.markdown-preview h1 {
+  font-size: 2em;
+  font-weight: 600;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #eaecef;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.markdown-preview h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #eaecef;
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.markdown-preview h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.markdown-preview h4 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.markdown-preview p {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.markdown-preview a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview code {
+  background-color: rgba(175, 184, 193, 0.2);
+  border-radius: 3px;
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+}
+
+.markdown-preview pre {
+  background-color: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+  margin-bottom: 16px;
+}
+
+.markdown-preview pre code {
+  background-color: transparent;
+  padding: 0;
+  margin: 0;
+  font-size: 100%;
+  border: none;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 2em;
+  margin-bottom: 16px;
+}
+
+.markdown-preview li {
+  margin-top: 0.25em;
+}
+
+.markdown-preview li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.markdown-preview table th,
+.markdown-preview table td {
+  border: 1px solid #d0d7de;
+  padding: 6px 13px;
+}
+
+.markdown-preview table th {
+  font-weight: 600;
+  background-color: #f6f8fa;
+}
+
+.markdown-preview table tr {
+  background-color: #fff;
+}
+
+.markdown-preview table tr:nth-child(2n) {
+  background-color: #f6f8fa;
+}
+
+.markdown-preview blockquote {
+  margin: 0 0 16px 0;
+  padding: 0 1em;
+  color: #6a737d;
+  border-left: 0.25em solid #d0d7de;
+}
+
+.markdown-preview hr {
+  height: 0.25em;
+  padding: 0;
+  margin: 24px 0;
+  background-color: #e1e4e8;
+  border: 0;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  box-sizing: content-box;
+}
+
+/* Syntax highlighting - VS Code dark theme for code blocks */
+.hljs {
+  background: #1e1e1e !important;
+  color: #d4d4d4 !important;
+  border-radius: 4px;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6a9955;
+}
+
+.hljs-keyword,
+.hljs-selector-tag {
+  color: #569cd6;
+}
+
+.hljs-string,
+.hljs-attr {
+  color: #ce9178;
+}
+
+.hljs-number,
+.hljs-literal {
+  color: #b5cea8;
+}
+
+.hljs-variable,
+.hljs-template-variable {
+  color: #9cdcfe;
+}
+
+.hljs-title,
+.hljs-function {
+  color: #dcdcaa;
+}
+
+.hljs-built_in,
+.hljs-type {
+  color: #4ec9b0;
+}
+
+.hljs-params {
+  color: #9cdcfe;
+}
+
+.hljs-meta {
+  color: #9b9b9b;
+}
+
+.hljs-tag {
+  color: #569cd6;
+}
+
+.hljs-attribute {
+  color: #9cdcfe;
+}

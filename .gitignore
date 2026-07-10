@@ -24,6 +24,10 @@ venv/
 # Docker
 docker-compose.override.yml
 
+# bin/dev.sh runtime state
+.dev-logs/
+.dev-pids/
+
 # IDE / editors
 .idea/
 .vscode/

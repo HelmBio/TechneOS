@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli clean
+.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -51,6 +51,15 @@ typecheck: ## Run type checker
 
 # --- Services ---
 
+dev-all: ## Start all backend services (use dev-all-portal to include the web portal)
+	./bin/dev.sh
+
+dev-all-portal: ## Start all services including the Next.js web portal
+	./bin/dev.sh --portal
+
+dev-stop: ## Stop all services started by dev-all
+	./bin/dev.sh --stop
+
 dev-gateway: ## Run API gateway in dev mode
 	uv run --package gateway uvicorn gateway.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -82,6 +91,23 @@ dev-task: ## Run task service in dev mode
 
 dev-cli: ## Run the CLI (usage: make dev-cli cmd="datasets list")
 	uv run python -m cli.main $(cmd)
+
+# --- Web portal ---
+
+dev-portal: ## Run Next.js web portal in dev mode (port 3000)
+	bash bin/generate-portal-env.sh .env
+	cd packages/portal && npx next dev --webpack --hostname 0.0.0.0
+
+install-portal: ## Install web portal dependencies
+	cd packages/portal && npm install
+	bash bin/generate-portal-env.sh .env
+
+build-portal: ## Build web portal for production
+	bash bin/generate-portal-env.sh .env
+	cd packages/portal && npx next build --webpack
+
+test-portal: ## Run Next.js frontend tests
+	cd packages/portal && npx vitest run
 
 # --- Cleanup ---
 

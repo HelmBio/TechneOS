@@ -11,10 +11,10 @@ Notes & Gotchas** captures per-feature implementation details.
 > commit. Today the repo contains the architecture design, a local Docker
 > development stack, the foundation Python layer (shared **core** library,
 > **tool-runtime**, Alembic **migrations**), the **service tier** (API gateway,
-> eight domain microservices, Platform Assistant), and the **client tier**: the
-> `techneos` CLI and the `management` toolkit. There is no web portal, execution
-> layer, or test suite yet — those land in subsequent commits, and the rules
-> below that reference them take effect as they arrive.
+> eight domain microservices, Platform Assistant), the **client tier**: the
+> `techneos` CLI and the `management` toolkit, and the **web portal** (Next.js).
+> There is no execution layer or test suite yet — those land in subsequent
+> commits, and the rules below that reference them take effect as they arrive.
 
 ---
 
@@ -44,22 +44,28 @@ If you need to run anything against production data, **ask the user first**.
 The Makefile targets available today (run `make help` for the list):
 
 ```bash
-make up         # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak)
-make install    # install the uv workspace (core, tool-runtime)
-make migrate    # apply Alembic migrations (make migrate-new / migrate-down also available)
-make lint       # ruff check
-make format     # ruff format + autofix
-make typecheck  # mypy packages/
-make ps         # show running services
-make logs       # tail service logs
-make down       # stop services (down-v also removes volumes)
-make clean      # remove build artifacts and caches
+make up             # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak)
+make install        # install the uv workspace (core, tool-runtime, services, ...)
+make install-portal # install the web portal's npm dependencies
+make migrate        # apply Alembic migrations (make migrate-new / migrate-down also available)
+make lint           # ruff check
+make format         # ruff format + autofix
+make typecheck      # mypy packages/
+make test-portal    # run the web portal's vitest suite
+make ps             # show running services
+make logs           # tail service logs
+make down           # stop services (down-v also removes volumes)
+make clean          # remove build artifacts and caches
 ```
 
 Run a backend in dev mode with `make dev-gateway` (the API gateway on `:8000`) or
 `make dev-auth` / `dev-dataset` / `dev-tool` / `dev-pipeline` / `dev-agent` /
-`dev-notification` / `dev-app` for the individual services. Test and web-portal
-targets are added as the corresponding code lands.
+`dev-notification` / `dev-app` / `dev-task` for the individual services. `make
+dev-all` starts every backend service at once via [`bin/dev.sh`](bin/dev.sh)
+(`make dev-stop` stops them); `make dev-all-portal` also starts the web portal.
+`make dev-portal` runs just the portal (`:3000`) against whichever gateway is
+already running, and `make build-portal` produces its production build. A
+Python test suite is added in a later commit.
 
 ## Coding Conventions
 
@@ -82,10 +88,9 @@ cache, the event bus, and the agent bridge. It depends only on
 `packages/tool-runtime` (the tool execution runtime + I/O contract), which has
 no intra-workspace dependencies of its own.
 
-Schema is managed with Alembic (`alembic.ini` + `migrations/`). The history
-starts from a single squashed baseline, `migrations/versions/0001_initial_schema.py`,
-which applies a verified schema-only dump; `migrations/versions/*` is excluded
-from Ruff. Apply migrations with `make migrate`, create a new revision with
+Schema is managed with Alembic (`alembic.ini` + `migrations/`). The full schema
+is defined in a single baseline migration, `migrations/versions/0001_initial_schema.py`;
+`migrations/versions/*` is excluded from Ruff. Apply migrations with `make migrate`, create a new revision with
 `make migrate-new msg="…"`, and roll back one with `make migrate-down`. Heed the
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
@@ -123,6 +128,25 @@ never the database directly:
   externally-authored catalog packages both import `management.registration`, so
   its distribution name and import path are a stable contract — don't rename them
   casually.
+
+## Web portal
+
+`packages/portal` (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) is a
+separate npm package, **not** part of the root `pyproject.toml` uv workspace —
+install it with `npm install` (or `make install-portal`), not `uv sync`.
+
+- Talks to the platform **only through the gateway REST API** (`@/lib/api`),
+  same as the CLI — never the database, never a backend service directly.
+  `next.config.ts` rewrites `/api/v1/*` to the gateway URL so the browser sees
+  everything same-origin (required for cookie-based sessions and iframe-embedded
+  Apps).
+- `bin/generate-portal-env.sh` derives the portal's `NEXT_PUBLIC_*` build-time
+  vars from the repo-root `.env`'s `PLATFORM_*` vars into `packages/portal/.env.local`
+  (gitignored, regenerated on every `dev-portal` / `dev-all-portal` /
+  `install-portal` / `build-portal` run) — never hand-edit `.env.local`.
+- Branding (site name, tagline, icon) is centralized in `src/lib/site-config.ts`,
+  overridable via `NEXT_PUBLIC_SITE_NAME` / `NEXT_PUBLIC_SITE_TAGLINE`.
+- Tests use Vitest + Testing Library (`src/__tests__/`); run with `make test-portal`.
 
 ## Keycloak DB auto-creation
 
