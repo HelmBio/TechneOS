@@ -23,6 +23,13 @@ members = [
     "packages/cli",
     "packages/management",
 ]
+exclude = [
+    # The execution layer (Airflow DAGs/operators) is not a workspace member:
+    # it runs inside the Airflow containers, which mount its code as volumes and
+    # install their own dependencies (apache-airflow) — it is never installed
+    # into the platform's uv environment.
+    "packages/execution",
+]
 # NOTE: catalog content (tools, agents, datasets, pipelines, apps) is authored
 # in a separate repository — it depends on the platform only via the published
 # techneos-tool-runtime / techneos-management wheels and the gateway REST API,
@@ -85,7 +92,11 @@ disallow_untyped_defs = true
 #    `management` client toolkit ambiently from the dev workspace (not
 #    importable library code).
 #  - tests: exercised by pytest, not part of the strict-typed library surface.
-exclude = ["/build_and_register\\.py$", "/tests/"]
+#  - packages/execution: the Airflow execution layer runs inside the Airflow
+#    containers, which install apache-airflow themselves. It is not a workspace
+#    member, so its `airflow` imports are unresolvable in the typed platform
+#    environment — mypy cannot meaningfully analyze it here. Ruff still lints it.
+exclude = ["/build_and_register\\.py$", "/tests/", "packages/execution/"]
 
 [[tool.mypy.overrides]]
 # Third-party packages without type stubs / py.typed markers.

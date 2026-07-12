@@ -162,6 +162,153 @@ services:
       retries: 15
       start_period: 30s
 
+  # --- Apache Airflow (pipeline orchestration) ---
+  airflow-init:
+    image: apache/airflow:2.9.0-python3.12
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        python << 'PYEOF'
+        import psycopg2
+        conn = psycopg2.connect(
+            host="postgres", user="${POSTGRES_USER:-techneos}",
+            password="${POSTGRES_PASSWORD:-techneos_dev_password}", dbname="postgres"
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname='airflow'")
+        if not cur.fetchone():
+            cur.execute("CREATE DATABASE airflow")
+            print("Created airflow database")
+        else:
+            print("Airflow database already exists")
+        cur.close()
+        conn.close()
+        PYEOF
+        airflow db migrate
+        airflow users create --role Admin --username ${AIRFLOW_USERNAME:-airflow} --password ${AIRFLOW_PASSWORD:-airflow} --email admin@techneos.local --firstname Admin --lastname TechneOS || true
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-techneos}:${POSTGRES_PASSWORD:-techneos_dev_password}@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-techneos-airflow-dev-secret-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    image: apache/airflow:2.9.0-python3.12
+    restart: unless-stopped
+    command: webserver
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-techneos}:${POSTGRES_PASSWORD:-techneos_dev_password}@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-techneos-airflow-dev-secret-key}
+      _PIP_ADDITIONAL_REQUIREMENTS: "minio>=7.2"
+      # Platform callback URL (reachable from within Docker network)
+      PLATFORM_CALLBACK_URL: http://host.docker.internal:8000
+      AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-techneos_airflow_pipeline}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      COMPUTE_BACKEND: docker
+      # AWS Batch (optional — set COMPUTE_BACKEND=aws_batch to use)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_BATCH_JOB_QUEUE: ${AWS_BATCH_JOB_QUEUE:-techneos-job-queue}
+      AWS_BATCH_JOB_DEFINITION: ${AWS_BATCH_JOB_DEFINITION:-techneos-tool-job}
+      AWS_BATCH_WORK_BUCKET: ${AWS_BATCH_WORK_BUCKET:-techneos-aws-batch-shared-data}
+      # MinIO connection (host.docker.internal for access from Docker)
+      MINIO_ENDPOINT: host.docker.internal:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: techneos-data
+      MINIO_SECURE: "false"
+      # DAG retry configuration
+      AIRFLOW_TASK_RETRIES: "1"
+      AIRFLOW_RETRY_DELAY_MINUTES: "1"
+      AIRFLOW_EXECUTION_TIMEOUT_HOURS: "24"
+    volumes:
+      - ./packages/execution/dags:/opt/airflow/dags
+      - ./packages/execution/operators:/opt/airflow/operators
+      - ./packages/execution/callbacks:/opt/airflow/callbacks
+      - ./packages/execution/backends:/opt/airflow/backends
+      - ./packages/execution/storage:/opt/airflow/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.dev-tmp/inputs:/tmp/techneos-shared-inputs
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.0-python3.12
+    restart: unless-stopped
+    command: scheduler
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-techneos}:${POSTGRES_PASSWORD:-techneos_dev_password}@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-techneos-airflow-dev-secret-key}
+      _PIP_ADDITIONAL_REQUIREMENTS: "minio>=7.2"
+      PLATFORM_CALLBACK_URL: http://host.docker.internal:8000
+      AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-techneos_airflow_pipeline}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      COMPUTE_BACKEND: docker
+      # AWS Batch (optional — set COMPUTE_BACKEND=aws_batch to use)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_BATCH_JOB_QUEUE: ${AWS_BATCH_JOB_QUEUE:-techneos-job-queue}
+      AWS_BATCH_JOB_DEFINITION: ${AWS_BATCH_JOB_DEFINITION:-techneos-tool-job}
+      AWS_BATCH_WORK_BUCKET: ${AWS_BATCH_WORK_BUCKET:-techneos-aws-batch-shared-data}
+      # Shared temp directory for passing downloaded files to sibling containers
+      DOCKER_NETWORK: ${DOCKER_NETWORK_NAME:-techneos}
+      TECHNEOS_SHARED_INPUT_DIR: /tmp/techneos-shared-inputs
+      TECHNEOS_HOST_SHARED_INPUT_DIR: ${PWD}/.dev-tmp/inputs
+      # Tool execution image — build locally via
+      # `uv run python packages/tool-runtime/build_and_register.py --skip-register`.
+      TECHNEOS_RUNTIME_IMAGE: ${TECHNEOS_RUNTIME_IMAGE:-techneos/tool-runtime}
+      TECHNEOS_RUNTIME_IMAGE_TAG: ${TECHNEOS_RUNTIME_IMAGE_TAG:-latest}
+      # MinIO connection (host.docker.internal for access from Docker)
+      MINIO_ENDPOINT: host.docker.internal:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: techneos-data
+      MINIO_SECURE: "false"
+      # DAG retry configuration
+      AIRFLOW_TASK_RETRIES: "1"
+      AIRFLOW_RETRY_DELAY_MINUTES: "1"
+      AIRFLOW_EXECUTION_TIMEOUT_HOURS: "24"
+    volumes:
+      - ./packages/execution/dags:/opt/airflow/dags
+      - ./packages/execution/operators:/opt/airflow/operators
+      - ./packages/execution/callbacks:/opt/airflow/callbacks
+      - ./packages/execution/backends:/opt/airflow/backends
+      - ./packages/execution/storage:/opt/airflow/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.dev-tmp/inputs:/tmp/techneos-shared-inputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   minio_data:

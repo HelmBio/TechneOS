@@ -13,9 +13,10 @@ Notes & Gotchas** captures per-feature implementation details.
 > Python layer (shared **core** library, **tool-runtime**, Alembic
 > **migrations**), the **service tier** (API gateway, eight domain
 > microservices, Platform Assistant), the **client tier**: the `techneos` CLI
-> and the `management` toolkit, and the **web portal** (Next.js). There is no
-> execution layer or test suite yet — those land in subsequent commits, and
-> the rules below that reference them take effect as they arrive.
+> and the `management` toolkit, the **web portal** (Next.js), and the
+> **execution layer** (Apache Airflow DAGs + compute backends). There is no
+> top-level test suite yet — it lands in a subsequent commit, and the rules
+> below that reference it take effect as it arrives.
 
 ---
 
@@ -45,7 +46,7 @@ If you need to run anything against production data, **ask the user first**.
 The Makefile targets available today (run `make help` for the list):
 
 ```bash
-make up             # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak)
+make up             # start the local Docker infra (Postgres, MinIO, Valkey, DevPI, Keycloak, Airflow)
 make install        # install the uv workspace (core, tool-runtime, services, ...)
 make install-portal # install the web portal's npm dependencies
 make migrate        # apply Alembic migrations (make migrate-new / migrate-down also available)
@@ -157,6 +158,34 @@ install it with `npm install` (or `make install-portal`), not `uv sync`.
 - Branding (site name, tagline, icon) is centralized in `src/lib/site-config.ts`,
   overridable via `NEXT_PUBLIC_SITE_NAME` / `NEXT_PUBLIC_SITE_TAGLINE`.
 - Tests use Vitest + Testing Library (`src/__tests__/`); run with `make test-portal`.
+
+## Execution layer (Airflow)
+
+`packages/execution` holds the pipeline orchestration layer: Airflow DAGs
+(`dags/dag_factory.py` builds a DAG per pipeline run), the `ToolOperator`
+(`operators/`) that dispatches each step, status callbacks to the platform
+(`callbacks/`), MinIO artifact I/O (`storage/`), and pluggable compute
+backends (`backends/`: Docker, AWS Batch, Slurm, and a human-task backend).
+
+Key facts for anyone working here:
+
+- **Not a uv workspace member** (excluded in `pyproject.toml`). It runs inside
+  the Airflow containers, which install `apache-airflow` themselves and mount
+  `dags/`, `operators/`, `callbacks/`, `backends/`, `storage/` **flat** under
+  `/opt/airflow/` — which is why its modules import each other by bare name
+  (`from backends.base import ...`), not as `packages.execution.*`.
+- Because `airflow` isn't installed in the typed platform environment, the
+  package is **excluded from mypy**; ruff still lints it, and it must stay
+  ruff-clean. Its unit tests live in `packages/execution/tests/` and run with
+  `PYTHONPATH=packages/execution` (they don't need Airflow).
+- The DAG reports step status back to the gateway using the shared
+  `INTERNAL_SERVICE_TOKEN` (the gateway's `X-Internal-Token` path). Set a real
+  value in `.env` — a blank token disables those callbacks.
+- Which backend runs a step is chosen by the step's `resource_requirements`
+  and the `COMPUTE_BACKEND` env var (`docker` locally, `aws_batch` in cloud).
+- `airflow-init` creates the `airflow` Postgres database and an admin user on
+  first `make up`; the webserver is on `:8082` (admin/admin by default). The
+  DAG id is `techneos_airflow_pipeline`.
 
 ## Authentication (Keycloak SSO)
 

@@ -6,7 +6,7 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — services + clients + web portal + SSO.**
+> **Status — services + clients + web portal + SSO + execution layer.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
 > architecture design, a runnable local development environment with
@@ -14,9 +14,10 @@ deployment.
 > Python layer (shared **core** library, **tool-runtime**, database migrations),
 > the **service tier** (API gateway, eight domain microservices, built-in
 > Platform Assistant), the **client tier**: the `techneos` **CLI** and the
-> **management** toolkit (admin/registration + wheel publishing), and the
-> **web portal** (Next.js). The execution layer and deployment assets are
-> introduced in subsequent commits.
+> **management** toolkit (admin/registration + wheel publishing), the
+> **web portal** (Next.js), and the **execution layer** (Apache Airflow DAGs +
+> pluggable compute backends). The deployment assets are introduced in
+> subsequent commits.
 
 ## Architecture
 
@@ -45,11 +46,12 @@ The target technology stack:
 | `packages/cli/` | The `techneos` command-line client (Typer/Rich/httpx) — talks to the platform through the gateway REST API |
 | `packages/management/` | Admin/registration toolkit published as the `techneos-management` wheel: resource-removal scripts and the registration helpers used by build/publish scripts |
 | `packages/portal/` | The web portal (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) — the primary UI for datasets, tools, pipelines, agents, apps, tasks, and admin; talks to the gateway REST API only |
+| `packages/execution/` | The execution layer — Apache Airflow DAGs, the `ToolOperator`, status callbacks, and pluggable compute backends (Docker, AWS Batch, Slurm, human). Runs inside the Airflow containers; not a uv workspace member |
 | `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema |
 | `keycloak/techneos-realm.dev.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
-| `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO) |
+| `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO, Airflow) |
 | `Makefile` | Developer command shortcuts (`make help`) |
-| `pyproject.toml` | Root uv workspace (Python packages only — the web portal is a separate npm package; the execution layer is added in a later commit) |
+| `pyproject.toml` | Root uv workspace (Python packages only — the web portal is a separate npm package; `packages/execution` is intentionally excluded, as it runs in the Airflow containers) |
 | `.env.example` | Environment variable template |
 | `AGENTS.md` | Conventions & subsystem notes for coding agents |
 
