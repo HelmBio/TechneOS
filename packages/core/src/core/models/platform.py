@@ -16,7 +16,7 @@ class PlatformSetting(Base, TimestampMixin):
     runtime — distinct from per-org settings (``Org.settings``). The first
     consumer is the ``label_overrides`` key, whose ``value`` is a flat
     ``{label_key: display_string}`` map used to rename UI nav items and
-    section headers per AIRE deployment.
+    section headers per deployment.
     """
 
     __tablename__ = "platform_settings"

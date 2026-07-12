@@ -13,10 +13,10 @@ Notes & Gotchas** captures per-feature implementation details.
 > Python layer (shared **core** library, **tool-runtime**, Alembic
 > **migrations**), the **service tier** (API gateway, eight domain
 > microservices, Platform Assistant), the **client tier**: the `techneos` CLI
-> and the `management` toolkit, the **web portal** (Next.js), and the
-> **execution layer** (Apache Airflow DAGs + compute backends). There is no
-> top-level test suite yet — it lands in a subsequent commit, and the rules
-> below that reference it take effect as it arrives.
+> and the `management` toolkit, the **web portal** (Next.js), the
+> **execution layer** (Apache Airflow DAGs + compute backends), and a
+> **test suite** (`tests/unit` + `tests/integration`). The production
+> deployment assets land in a subsequent commit.
 
 ---
 
@@ -31,7 +31,7 @@ Notes & Gotchas** captures per-feature implementation details.
 - Writing integration tests that use the production database
 - Any code that could modify, truncate, or drop production tables
 
-Once the test suite lands, all tests MUST use the `techneos_test` database (never the primary `techneos` database), integration tests must be marked `@pytest.mark.integration`, and they must be excluded from the default test run. *(No test suite exists in the repo yet.)*
+All tests MUST use the `techneos_test` database (never the primary `techneos` database) — the test conftest force-sets `POSTGRES_DB=techneos_test`. Integration tests must be marked `@pytest.mark.integration` and are excluded from the default test run (`make test`); run them explicitly with `make test-integration`.
 
 If you need to run anything against production data, **ask the user first**.
 
@@ -54,6 +54,8 @@ make seed           # create default roles, org, team, and an admin user (run af
 make lint           # ruff check
 make format         # ruff format + autofix
 make typecheck      # mypy packages/
+make test           # Python tests, excluding integration (make test-unit / test-cov also available)
+make test-integration  # integration tests (requires the stack up)
 make test-portal    # run the web portal's vitest suite
 make ps             # show running services
 make logs           # tail service logs
@@ -67,8 +69,9 @@ Run a backend in dev mode with `make dev-gateway` (the API gateway on `:8000`) o
 dev-all` starts every backend service at once via [`bin/dev.sh`](bin/dev.sh)
 (`make dev-stop` stops them); `make dev-all-portal` also starts the web portal.
 `make dev-portal` runs just the portal (`:3000`) against whichever gateway is
-already running, and `make build-portal` produces its production build. A
-Python test suite is added in a later commit.
+already running, and `make build-portal` produces its production build. See
+the Testing section for `make test` / `test-integration` and the per-package
+test targets.
 
 ## Coding Conventions
 
@@ -186,6 +189,61 @@ Key facts for anyone working here:
 - `airflow-init` creates the `airflow` Postgres database and an admin user on
   first `make up`; the webserver is on `:8082` (admin/admin by default). The
   DAG id is `techneos_airflow_pipeline`.
+
+## Testing
+
+### Where tests live (the principle)
+
+**A package is tested at exactly one level — never both.** The dividing line
+is *where the package runs*: the server-side platform is tested top-level;
+anything shipped or executed **outside** the platform deployment owns its
+tests in-package.
+
+- **Server-side platform** — `core`, `gateway`, and the eight `services/*` —
+  is tested in the **top-level `tests/`** suite. Its tests routinely cut across
+  packages (a route test touches `core` models, service CRUD, and gateway auth
+  at once) and rely on the assembled uv workspace. These packages carry **no
+  `tests/` directory of their own**.
+- **Packages shipped/run outside the platform** own their tests **in-package**,
+  because they're consumed by customers or run in a separate runtime, have no
+  intra-workspace (`core`) dependency, and are exercised in isolation:
+  - `cli` → `packages/cli/tests/` — the `techneos-cli` client wheel customers
+    install; talks to the platform only over the gateway REST API, which the
+    tests mock (`make test-cli`).
+  - `management` → `packages/management/tests/` — the `techneos-management`
+    client wheel (also imported by the external catalog repo); talks to the
+    gateway REST API + AWS, both mocked in tests (`make test-management`).
+  - `tool-runtime` → `packages/tool-runtime/tests/` — the published foundation
+    wheel tool authors build against (`make test-tool-runtime`).
+  - `execution` → `packages/execution/tests/` — excluded from the uv workspace
+    (runs inside the Airflow containers), so it can't be collected by the
+    workspace suite; run via `PYTHONPATH=packages/execution`
+    (`make test-execution`).
+  - `portal` → `packages/portal/src/__tests__/` — a different language and
+    runner (Vitest), per Next.js convention (`make test-portal`).
+
+  A package in this second group must **not** also be tested from the
+  top-level suite. `make test-all` runs every level together.
+
+  Rule of thumb: if a package has no `core` dependency and its tests need
+  nothing from the shared `tests/conftest.py`, it belongs in-package.
+
+### Conventions (enforced by config)
+
+- **`tests/conftest.py` sets the test environment** before any import:
+  `POSTGRES_DB` is *force-set* to `techneos_test` (so a stray run can never
+  touch the primary DB), and dev values for `JWT_SECRET_KEY` /
+  `SECRETS_ENCRYPTION_KEY` / etc. are `setdefault`-ed (honoring anything CI
+  already exported). Mirror this pattern when a new test needs a secret.
+- **Integration tests are marked `@pytest.mark.integration`** and excluded
+  from the default run via `addopts = -m 'not integration'`. `make test`
+  runs everything except integration; `make test-integration` runs only
+  them and needs `make up` first. `pytest-asyncio` is in `auto` mode, so
+  `async def test_*` needs no decorator.
+- **Tests are excluded from mypy** (`/tests/` in the exclude list) but **are
+  linted by ruff**. Two pep8-naming rules (`N806`, `N803`) are ignored under
+  `tests/**` because mocked classes idiomatically keep PascalCase names
+  (e.g. `patch(...) as MockClient`).
 
 ## Authentication (Keycloak SSO)
 

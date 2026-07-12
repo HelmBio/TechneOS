@@ -77,6 +77,9 @@ ignore = [
 "**/crud/versions.py" = ["T201"]  # print for dev-visible event logging
 "packages/cli/**" = ["T201"]  # CLI prints to terminal
 "packages/management/**" = ["T201"]  # management scripts print to terminal
+# Mocked classes conventionally keep PascalCase names (e.g. `patch(...) as
+# MockClient`), so the pep8-naming rules for lowercase locals/args don't apply.
+"tests/**" = ["N806", "N803"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "gateway", "auth_service", "dataset_service", "tool_service", "task_service", "pipeline_service", "agent_service", "notification_service", "cli", "management", "techneos_tool_runtime"]
@@ -116,4 +119,18 @@ module = ["valkey.*", "rdkit.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 follow_imports_for_stubs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Integration tests require running infrastructure (Docker Compose); excluded
+# from the default run. Use `make test-integration` (or `-m integration`) to
+# run them against a live stack.
+addopts = "-m 'not integration'"
+markers = [
+    "integration: requires running infrastructure (Docker Compose)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
 

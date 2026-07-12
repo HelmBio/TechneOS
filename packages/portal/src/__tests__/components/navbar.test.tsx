@@ -59,9 +59,9 @@ describe("Navbar (Sidebar)", () => {
     render(<Navbar />);
     expect(screen.getByText("Datasets")).toBeInTheDocument();
     expect(screen.getByText("Tools")).toBeInTheDocument();
-    expect(screen.getByText("Workflows")).toBeInTheDocument();
+    expect(screen.getByText("Pipelines")).toBeInTheDocument();
     expect(screen.getByText("Agents")).toBeInTheDocument();
-    expect(screen.getByText("Workflow Runs")).toBeInTheDocument();
+    expect(screen.getByText("Pipeline Runs")).toBeInTheDocument();
     expect(screen.getByText("Agent Sessions")).toBeInTheDocument();
   });
 

@@ -6,7 +6,7 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — services + clients + web portal + SSO + execution layer.**
+> **Status — services + clients + web portal + SSO + execution layer + tests.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
 > architecture design, a runnable local development environment with
@@ -15,9 +15,9 @@ deployment.
 > the **service tier** (API gateway, eight domain microservices, built-in
 > Platform Assistant), the **client tier**: the `techneos` **CLI** and the
 > **management** toolkit (admin/registration + wheel publishing), the
-> **web portal** (Next.js), and the **execution layer** (Apache Airflow DAGs +
-> pluggable compute backends). The deployment assets are introduced in
-> subsequent commits.
+> **web portal** (Next.js), the **execution layer** (Apache Airflow DAGs +
+> pluggable compute backends), and a **test suite** (unit + integration). The
+> deployment assets are introduced in a subsequent commit.
 
 ## Architecture
 
@@ -47,6 +47,7 @@ The target technology stack:
 | `packages/management/` | Admin/registration toolkit published as the `techneos-management` wheel: resource-removal scripts and the registration helpers used by build/publish scripts |
 | `packages/portal/` | The web portal (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) — the primary UI for datasets, tools, pipelines, agents, apps, tasks, and admin; talks to the gateway REST API only |
 | `packages/execution/` | The execution layer — Apache Airflow DAGs, the `ToolOperator`, status callbacks, and pluggable compute backends (Docker, AWS Batch, Slurm, human). Runs inside the Airflow containers; not a uv workspace member |
+| `tests/` | Test suite — `tests/unit` (fast, mocked) and `tests/integration` (marked `integration`, need the stack up) |
 | `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema |
 | `keycloak/techneos-realm.dev.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO, Airflow) |
@@ -81,6 +82,32 @@ After `make seed`, log in with the seeded admin account (`admin@example.com` /
 or register a new one from the login page. To enable Google/GitHub sign-in,
 see the "Authentication (Keycloak SSO)" section in [`AGENTS.md`](AGENTS.md) —
 it takes a Keycloak config in `.env` plus your own OAuth app credentials.
+
+## Testing
+
+```bash
+make test              # integrated-platform tests (top-level tests/), excludes integration
+make test-unit         # integrated-platform unit tests only
+make test-integration  # integration tests (requires `make up` first)
+make test-cov          # integrated-platform tests with a coverage report
+make test-cli          # CLI client's in-package tests
+make test-management   # management client's in-package tests
+make test-tool-runtime # tool-runtime's in-package tests
+make test-execution    # execution layer's in-package tests
+make test-portal       # web portal (Vitest) tests
+make test-all          # every suite: integrated platform + in-package + portal
+```
+
+The top-level `tests/` suite covers the server-side platform (core, gateway,
+the eight services). Packages shipped or run outside the platform deployment
+own their tests in-package and get a dedicated target: the `cli` and
+`management` client wheels, the `tool-runtime` base wheel, the `execution`
+(Airflow) runtime, and the `portal` (Vitest). A package is tested at one level
+only, never both.
+
+Integration tests are marked `integration` and excluded from the default run;
+they run against the live stack (a dedicated `techneos_test` database) and
+require `make up`.
 
 ## Documentation
 

@@ -15,7 +15,7 @@ import { useAuth } from "@/lib/auth";
 /**
  * Catalog of configurable UI label keys and their English defaults.
  *
- * A platform_admin can override any of these per AIRE instance via
+ * A platform_admin can override any of these per instance via
  * /settings/labels (persisted in the backend `platform_settings` table). UI
  * code always resolves labels through `useLabel()` / `useLabels()`, which fall
  * back to the default here for any key without an override — so labels are
@@ -25,8 +25,6 @@ import { useAuth } from "@/lib/auth";
  * i18n-message-key shaped, so this can migrate onto a real i18n framework
  * later without reworking call sites.
  *
- * Note: routes, DB tables, and `countKey`s stay `pipeline(s)` — only the
- * displayed string for that resource defaults to "Workflows".
  */
 export const DEFAULT_LABELS = {
   "section.catalog": "Catalog",

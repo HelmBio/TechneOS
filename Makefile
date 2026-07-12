@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps sync-idp-secrets migrate migrate-new migrate-down seed install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
+.PHONY: help up down down-v logs ps sync-idp-secrets migrate migrate-new migrate-down seed install lint format typecheck test test-unit test-integration test-cov test-cli test-management test-tool-runtime test-execution test-all dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -56,6 +56,49 @@ format: ## Format code
 
 typecheck: ## Run type checker
 	uv run mypy packages/
+
+# --- Testing ---
+# The top-level tests/ suite covers the server-side integrated platform (core,
+# gateway, the eight services). Packages shipped or run OUTSIDE the platform
+# deployment own their tests in-package and get a dedicated target: the client
+# wheels cli & management, the tool-runtime base wheel, the execution/Airflow
+# runtime, and the portal (Vitest). `make test-all` runs everything.
+
+test: ## Run the integrated-platform tests (top-level tests/, excludes integration)
+	uv run pytest -v
+
+test-unit: ## Run the integrated-platform unit tests only
+	uv run pytest tests/unit -v
+
+test-integration: ## Run integration tests only (requires the stack up: make up)
+	uv run pytest -m integration -v
+
+test-cov: ## Run the integrated-platform tests with coverage
+	uv run pytest --cov=packages --cov-report=term-missing
+
+test-cli: ## Run the CLI client's in-package tests
+	uv run pytest packages/cli/tests -v
+
+test-management: ## Run the management client's in-package tests
+	uv run pytest packages/management/tests -v
+
+test-tool-runtime: ## Run tool-runtime's in-package tests
+	uv run pytest packages/tool-runtime/tests -v
+
+test-execution: ## Run the execution layer's in-package tests (Airflow, out-of-workspace)
+	PYTHONPATH=packages/execution uv run pytest packages/execution/tests -v
+
+test-all: ## Run every test suite incl. integration + web portal (requires: make up)
+	# Each in-package suite runs in its own pytest process: they each ship a
+	# tests/ package, so collecting more than one in a single invocation would
+	# collide on the shared `tests` module name.
+	uv run pytest -v
+	uv run pytest -m integration -v
+	uv run pytest packages/cli/tests -v
+	uv run pytest packages/management/tests -v
+	uv run pytest packages/tool-runtime/tests -v
+	PYTHONPATH=packages/execution uv run pytest packages/execution/tests -v
+	cd packages/portal && npx vitest run
 
 # --- Services ---
 

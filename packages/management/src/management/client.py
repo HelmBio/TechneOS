@@ -64,7 +64,14 @@ class TechneOSClient:
             if code != 200:
                 break
             data = json.loads(body)
-            batch = data.get("items", data if isinstance(data, list) else [])
+            if isinstance(data, list):
+                # A bare-list endpoint isn't paginated — take the one page and stop.
+                batch = data
+                if filter_fn:
+                    batch = [item for item in batch if filter_fn(item)]
+                items.extend(batch)
+                break
+            batch = data.get("items", [])
             if filter_fn:
                 batch = [item for item in batch if filter_fn(item)]
             items.extend(batch)
