@@ -6,10 +6,11 @@ for autonomous tasks, and track human tasks — through a web portal, REST API,
 and CLI. Supports **SaaS (multi-tenant)** and **self-hosted (on-premises)**
 deployment.
 
-> **Status — services + clients + web portal.**
+> **Status — services + clients + web portal + SSO.**
 > This README is a *living document* that tracks what the repository actually
 > contains today, and grows with each commit. Right now the repo holds the
-> architecture design, a runnable local development environment, the foundation
+> architecture design, a runnable local development environment with
+> **Keycloak SSO** (Google + GitHub identity providers), the foundation
 > Python layer (shared **core** library, **tool-runtime**, database migrations),
 > the **service tier** (API gateway, eight domain microservices, built-in
 > Platform Assistant), the **client tier**: the `techneos` **CLI** and the
@@ -45,7 +46,8 @@ The target technology stack:
 | `packages/management/` | Admin/registration toolkit published as the `techneos-management` wheel: resource-removal scripts and the registration helpers used by build/publish scripts |
 | `packages/portal/` | The web portal (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) — the primary UI for datasets, tools, pipelines, agents, apps, tasks, and admin; talks to the gateway REST API only |
 | `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema |
-| `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak) |
+| `keycloak/techneos-realm.dev.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
+| `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO) |
 | `Makefile` | Developer command shortcuts (`make help`) |
 | `pyproject.toml` | Root uv workspace (Python packages only — the web portal is a separate npm package; the execution layer is added in a later commit) |
 | `.env.example` | Environment variable template |
@@ -61,6 +63,7 @@ cp .env.example .env   # defaults work for local dev
 make up                # start PostgreSQL, MinIO, Valkey, DevPI, Keycloak
 make install           # install the Python workspace
 make migrate           # apply the database schema
+make seed              # create default roles, org, team, and an admin user
 make install-portal    # install the web portal's npm dependencies
 make dev-all-portal    # run every backend service + the web portal (localhost:3000)
 ```
@@ -70,6 +73,12 @@ Or run pieces individually: `make dev-gateway` (API gateway, `:8000`),
 for just the web portal, and `make dev-cli cmd="datasets list"` for the CLI.
 `make dev-all` / `make dev-stop` start/stop the whole backend via
 [`bin/dev.sh`](bin/dev.sh). Run `make help` to see every target.
+
+After `make seed`, log in with the seeded admin account (`admin@example.com` /
+`changeme123`, from `packages/core/src/core/database/.techneos.example.json`)
+or register a new one from the login page. To enable Google/GitHub sign-in,
+see the "Authentication (Keycloak SSO)" section in [`AGENTS.md`](AGENTS.md) —
+it takes a Keycloak config in `.env` plus your own OAuth app credentials.
 
 ## Documentation
 

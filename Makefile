@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps migrate migrate-new migrate-down install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
+.PHONY: help up down down-v logs ps sync-idp-secrets migrate migrate-new migrate-down seed install lint format typecheck dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -23,6 +23,11 @@ logs: ## Tail logs for all services
 ps: ## Show running services
 	docker compose ps
 
+# --- Keycloak ---
+
+sync-idp-secrets: ## Re-sync Google/GitHub OAuth credentials into the running Keycloak realm from .env
+	./bin/sync-keycloak-idp-secrets.sh
+
 # --- Database ---
 
 migrate: ## Run Alembic migrations
@@ -33,6 +38,9 @@ migrate-new: ## Create new migration (usage: make migrate-new msg="add users tab
 
 migrate-down: ## Rollback last migration
 	uv run alembic downgrade -1
+
+seed: ## Seed default roles, org, team, and admin user (run after migrate)
+	uv run python -m core.database.seed
 
 # --- Development ---
 

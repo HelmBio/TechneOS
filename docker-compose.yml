@@ -148,6 +148,8 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-techneos_dev_client_secret}
     ports:
       - "8080:8080"
+    volumes:
+      - ./keycloak/techneos-realm.dev.json:/opt/keycloak/data/import/techneos-realm.dev.json:ro
     depends_on:
       postgres:
         condition: service_healthy

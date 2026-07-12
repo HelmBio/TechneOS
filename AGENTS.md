@@ -9,12 +9,13 @@ Notes & Gotchas** captures per-feature implementation details.
 > as it stands *today*, not the final design. When a commit adds a package,
 > command, convention, or subsystem, update the relevant section in the same
 > commit. Today the repo contains the architecture design, a local Docker
-> development stack, the foundation Python layer (shared **core** library,
-> **tool-runtime**, Alembic **migrations**), the **service tier** (API gateway,
-> eight domain microservices, Platform Assistant), the **client tier**: the
-> `techneos` CLI and the `management` toolkit, and the **web portal** (Next.js).
-> There is no execution layer or test suite yet — those land in subsequent
-> commits, and the rules below that reference them take effect as they arrive.
+> development stack with **Keycloak SSO** (Google + GitHub), the foundation
+> Python layer (shared **core** library, **tool-runtime**, Alembic
+> **migrations**), the **service tier** (API gateway, eight domain
+> microservices, Platform Assistant), the **client tier**: the `techneos` CLI
+> and the `management` toolkit, and the **web portal** (Next.js). There is no
+> execution layer or test suite yet — those land in subsequent commits, and
+> the rules below that reference them take effect as they arrive.
 
 ---
 
@@ -48,6 +49,7 @@ make up             # start the local Docker infra (Postgres, MinIO, Valkey, Dev
 make install        # install the uv workspace (core, tool-runtime, services, ...)
 make install-portal # install the web portal's npm dependencies
 make migrate        # apply Alembic migrations (make migrate-new / migrate-down also available)
+make seed           # create default roles, org, team, and an admin user (run after migrate)
 make lint           # ruff check
 make format         # ruff format + autofix
 make typecheck      # mypy packages/
@@ -94,6 +96,14 @@ is defined in a single baseline migration, `migrations/versions/0001_initial_sch
 `make migrate-new msg="…"`, and roll back one with `make migrate-down`. Heed the
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
+
+After migrating, `make seed` runs `core/database/seed.py` to create default
+roles, a default org/team, and an admin user (`admin@example.com` /
+`changeme123`, from `.techneos.<environment>.json` — falls back to the
+committed `.techneos.example.json` if no environment-specific file exists).
+Idempotent: re-running it upserts roles and only fills in missing fields on
+existing rows, so it's safe to run again after a `make down-v && make up`
+against a fresh volume.
 
 ## Service tier & gateway
 
@@ -148,7 +158,7 @@ install it with `npm install` (or `make install-portal`), not `uv sync`.
   overridable via `NEXT_PUBLIC_SITE_NAME` / `NEXT_PUBLIC_SITE_TAGLINE`.
 - Tests use Vitest + Testing Library (`src/__tests__/`); run with `make test-portal`.
 
-## Keycloak DB auto-creation
+## Authentication (Keycloak SSO)
 
 The compose file has a `keycloak-init` service (a plain `postgres:16-alpine`
 container running `psql`/`pg_isready`) that creates the `keycloak` Postgres
@@ -156,6 +166,39 @@ database before the `keycloak` service starts — Keycloak creates its own schem
 on boot but not the database itself. Local dev's Keycloak uses Postgres
 (`KC_DB=postgres`) rather than an embedded dev database, so it shares the same
 storage backend as the rest of the stack.
+
+`keycloak/techneos-realm.dev.json` is volume-mounted into the
+`keycloak` service's import directory and auto-imported on startup
+(`kc.sh start-dev --import-realm`) — it defines the `techneos` realm, the
+`techneos-api` / `techneos-web` clients, and Google + GitHub identity
+providers. Local email/password login works out of the box with no further
+setup. To enable the Google/GitHub buttons on the portal's login page:
+
+1. Uncomment the `KEYCLOAK_*` vars in `.env` (see `.env.example`) so
+   `keycloak_configured` is true — this is what makes the frontend's
+   `/api/v1/auth/oidc/config` response include Keycloak, and the login page's
+   `showGoogle`/`showGitHub` flags render the buttons.
+2. Register your own OAuth apps (Google Cloud Console, GitHub OAuth Apps) and
+   set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`
+   in `.env` — the realm file wires these in via env var substitution, so
+   nothing else needs editing.
+3. `make down-v && make up` for a fresh Postgres volume (Keycloak only
+   imports a realm the first time its DB is created).
+
+Redirect URIs in the realm file assume `localhost:3000` (portal) and
+`localhost:8080` (Keycloak) — update both the realm file and your OAuth app's
+authorized redirect URIs together if you change ports/hosts.
+
+**Rotating OAuth credentials later:** the `${GOOGLE_CLIENT_ID}`-style env var
+substitution in `keycloak/techneos-realm.dev.json` only happens once, at
+first import. If you change `GOOGLE_CLIENT_ID`/`GITHUB_CLIENT_ID`/etc. in
+`.env` afterward, the running realm keeps the stale values — recreating the
+`keycloak` container updates its own environment but not the identity
+provider config already stored in Keycloak's database. Run
+`make sync-idp-secrets` ([`bin/sync-keycloak-idp-secrets.sh`](bin/sync-keycloak-idp-secrets.sh))
+to push the current `.env` values into the running realm via the Keycloak
+admin CLI, without a full `make down-v` reset (which would also wipe seeded
+roles/org/users and anything else in Postgres).
 
 ## Documentation Maintenance
 
