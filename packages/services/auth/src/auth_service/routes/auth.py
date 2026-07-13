@@ -11,6 +11,7 @@ which providers are available so it can render the right buttons.
 """
 
 import logging
+import os
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -36,7 +37,6 @@ from core.auth.providers import (
 )
 from core.config import get_settings
 from core.database.postgres import get_async_session
-from core.database.seed import load_seed_config
 from core.exceptions import (
     AlreadyExistsError,
     InvalidCredentialsError,
@@ -73,9 +73,13 @@ async def _resolve_role_data(session: AsyncSession, user: User) -> tuple[str | N
 
 
 async def _default_org_id(session: AsyncSession) -> str | None:
-    """Return the default org ID for JIT-provisioned users."""
-    config = load_seed_config(get_settings().environment)
-    slug = config.get("org", {}).get("slug", "default")
+    """Return the default org ID for JIT-provisioned users.
+
+    The org a first-seen SSO user is attached to. Its slug is the seeded
+    default org (``DEFAULT_ORG_SLUG``, default ``"default"``) — resolved by
+    slug at runtime rather than reading any seed-time config file.
+    """
+    slug = os.environ.get("DEFAULT_ORG_SLUG", "default")
     result = await session.execute(select(Org).where(Org.slug == slug))
     org = result.scalar_one_or_none()
     return org.id if org else None

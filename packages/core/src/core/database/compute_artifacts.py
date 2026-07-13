@@ -3,7 +3,7 @@
 Shared by the services that gate a definition on a published artifact: tool-service
 (tool versions, via ``_resolve_artifacts``) and agent-service (agent
 ``package_config``). The write/ingest path lives in
-``core.database.register_compute_artifacts``.
+the top-level ``setup/register_compute_artifacts.py`` script.
 """
 
 from __future__ import annotations

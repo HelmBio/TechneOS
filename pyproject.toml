@@ -47,9 +47,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# build_and_register.py files are deploy-time operational scripts (not part of
-# the wheels); excluded from lint/typecheck here — same as the mypy exclude.
-exclude = ["migrations/versions/*", "**/build_and_register.py"]
+exclude = ["migrations/versions/*"]
 
 [tool.ruff.lint]
 select = [
@@ -77,6 +75,7 @@ ignore = [
 "**/crud/versions.py" = ["T201"]  # print for dev-visible event logging
 "packages/cli/**" = ["T201"]  # CLI prints to terminal
 "packages/management/**" = ["T201"]  # management scripts print to terminal
+"setup/**" = ["T201"]  # platform-admin setup scripts print progress
 # Mocked classes conventionally keep PascalCase names (e.g. `patch(...) as
 # MockClient`), so the pep8-naming rules for lowercase locals/args don't apply.
 "tests/**" = ["N806", "N803"]
@@ -91,15 +90,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 # Excluded from type checking:
-#  - build_and_register.py: a standalone publish script that imports the
-#    `management` client toolkit ambiently from the dev workspace (not
-#    importable library code).
 #  - tests: exercised by pytest, not part of the strict-typed library surface.
 #  - packages/execution: the Airflow execution layer runs inside the Airflow
 #    containers, which install apache-airflow themselves. It is not a workspace
 #    member, so its `airflow` imports are unresolvable in the typed platform
 #    environment — mypy cannot meaningfully analyze it here. Ruff still lints it.
-exclude = ["/build_and_register\\.py$", "/tests/", "packages/execution/"]
+exclude = ["/tests/", "packages/execution/"]
 
 [[tool.mypy.overrides]]
 # Third-party packages without type stubs / py.typed markers.

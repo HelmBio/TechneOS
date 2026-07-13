@@ -17,11 +17,11 @@ index and records it as a ``kind=wheel`` artifact, so a catalog repo split out o
 the monorepo can resolve the dependency.
 
 Usage:
-    uv run python packages/tool-runtime/build_and_register.py                 # build (local) + record image
-    uv run python packages/tool-runtime/build_and_register.py --skip-register # build only (old build.sh)
-    uv run python packages/tool-runtime/build_and_register.py --env=prod      # buildx + push to ECR + record
-    uv run python packages/tool-runtime/build_and_register.py --skip-build    # record an already-built image
-    uv run python packages/tool-runtime/build_and_register.py --publish-wheel # also publish + record the wheel
+    uv run python setup/wheels/publish_tool_runtime.py                 # build (local) + record image
+    uv run python setup/wheels/publish_tool_runtime.py --skip-register # build only (old build.sh)
+    uv run python setup/wheels/publish_tool_runtime.py --env=prod      # buildx + push to ECR + record
+    uv run python setup/wheels/publish_tool_runtime.py --skip-build    # record an already-built image
+    uv run python setup/wheels/publish_tool_runtime.py --publish-wheel # also publish + record the wheel
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from management.registration import (
     resolve_image_repo,
 )
 
-PACKAGE_DIR = Path(__file__).parent
+PACKAGE_DIR = Path(__file__).resolve().parents[2] / "packages" / "tool-runtime"
 IMAGE = "techneos/tool-runtime"
 
 

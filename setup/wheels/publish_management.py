@@ -7,9 +7,9 @@ wheel here and records it in the ``compute_artifacts`` inventory
 (``origin=platform``) so a standalone catalog checkout can resolve it.
 
 Usage:
-    uv run python packages/management/build_and_register.py                 # build + publish + record
-    uv run python packages/management/build_and_register.py --env=prod      # publish to CodeArtifact + record
-    uv run python packages/management/build_and_register.py --skip-register # publish only (no inventory record)
+    uv run python setup/wheels/publish_management.py                 # build + publish + record
+    uv run python setup/wheels/publish_management.py --env=prod      # publish to CodeArtifact + record
+    uv run python setup/wheels/publish_management.py --skip-register # publish only (no inventory record)
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from management.registration import (
     start_session,
 )
 
-PACKAGE_DIR = Path(__file__).parent
+PACKAGE_DIR = Path(__file__).resolve().parents[2] / "packages" / "management"
 
 
 def main() -> None:

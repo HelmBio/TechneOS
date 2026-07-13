@@ -98,6 +98,12 @@ def _bootstrap_test_db():
     # relying on other test files to import a module as a side effect breaks
     # whenever this file (or a subset of tests) runs on its own, since a
     # module never imported never registers its tables/FKs on Base.metadata.
+    # Seeding lives in the top-level setup/ scripts (not a package); load it by
+    # path so the integration DB gets the same roles/org/admin a platform admin
+    # would create with `make seed`.
+    import importlib.util
+    from pathlib import Path
+
     import core.models.agent
     import core.models.app
     import core.models.artifact
@@ -113,14 +119,19 @@ def _bootstrap_test_db():
     import core.models.tool_run
     import core.models.user  # noqa: F401
     from core.database.postgres import get_async_engine
-    from core.database.seed import seed
     from core.models import Base
+
+    seed_path = Path(__file__).resolve().parents[2] / "setup" / "database" / "seed.py"
+    spec = importlib.util.spec_from_file_location("techneos_setup_seed", seed_path)
+    assert spec and spec.loader
+    seed_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed_module)
 
     async def _setup():
         engine = get_async_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        await seed()
+        await seed_module.seed()
 
     asyncio.get_event_loop().run_until_complete(_setup())
 

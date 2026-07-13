@@ -1,9 +1,20 @@
-"""Database seed script — create default roles, org, team, and admin user.
+"""Database seeding — create the default roles, org, team, and admin user.
 
-Config is loaded from ``.techneos.<env>.json`` (e.g. ``.techneos.development.json``)
-with a fallback to ``.techneos.example.json`` if the environment-specific file
-is absent.
+A platform-admin operation, run once after the infrastructure and schema are
+up (``make up`` + ``make migrate``) and before any catalog items are
+registered. Not part of any shipped wheel and not imported by the services at
+runtime — it writes directly to the database.
+
+Config is loaded from ``.techneos.<env>.json`` next to this file (e.g.
+``.techneos.development.json``), falling back to ``.techneos.example.json``.
+The org, team, and admin-user values can be overridden per deployment with
+``DEFAULT_*`` variables in ``.env`` (see ``SeedOverrides``); role definitions
+stay in the JSON, since their permission lists are too structured for env vars.
+
+    python setup/database/seed.py   # or: make seed
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -12,6 +23,7 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,22 +33,63 @@ from core.database.postgres import get_async_engine, get_session_factory
 from core.models.user import Org, Role, Team, User
 
 
+class SeedOverrides(BaseSettings):
+    """Optional ``.env`` overrides for the seeded org, team, and admin user.
+
+    Read from the same ``.env`` the platform uses. Each field maps to an
+    uppercased environment variable (``default_org_slug`` ← ``DEFAULT_ORG_SLUG``);
+    anything left unset falls back to the value in the JSON seed config. Keeping
+    ``DEFAULT_ORG_SLUG`` here in sync with the auth service (which resolves a
+    user's default org by the same variable) is what lets the seeded org and the
+    runtime lookup agree.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    default_org_name: str | None = None
+    default_org_slug: str | None = None
+    default_team_name: str | None = None
+    default_team_slug: str | None = None
+    default_admin_email: str | None = None
+    default_admin_password: str | None = None
+    default_admin_full_name: str | None = None
+    default_admin_role: str | None = None
+
+
+# Each override attribute maps to a (section, key) in the JSON config.
+_OVERRIDE_MAP: dict[str, tuple[str, str]] = {
+    "default_org_name": ("org", "name"),
+    "default_org_slug": ("org", "slug"),
+    "default_team_name": ("team", "name"),
+    "default_team_slug": ("team", "slug"),
+    "default_admin_email": ("admin_user", "email"),
+    "default_admin_password": ("admin_user", "password"),
+    "default_admin_full_name": ("admin_user", "full_name"),
+    "default_admin_role": ("admin_user", "role"),
+}
+
+
 def _default_team_slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return s or "team"
 
 
-def _seed_dir() -> Path:
-    """Directory containing seed.py and its config files."""
-    return Path(__file__).resolve().parent
+def _apply_overrides(config: dict[str, Any], overrides: SeedOverrides) -> None:
+    """Overlay any set ``DEFAULT_*`` env values onto the loaded config in place."""
+    for attr, (section, key) in _OVERRIDE_MAP.items():
+        value = getattr(overrides, attr)
+        if value is not None:
+            config.setdefault(section, {})[key] = value
 
 
 def load_seed_config(env: str = "development") -> dict[str, Any]:
-    """Load seed configuration for the given environment.
+    """Load seed configuration for ``env``.
 
-    Tries ``.techneos.<env>.json`` first, then falls back to ``.techneos.example.json``.
+    Tries ``.techneos.<env>.json`` first, then falls back to
+    ``.techneos.example.json`` for the base values, then overlays any
+    ``DEFAULT_*`` overrides from ``.env`` onto the org/team/admin-user fields.
     """
-    seed_dir = _seed_dir()
+    seed_dir = Path(__file__).resolve().parent
     candidates = [
         seed_dir / f".techneos.{env}.json",
         seed_dir / ".techneos.example.json",
@@ -44,7 +97,9 @@ def load_seed_config(env: str = "development") -> dict[str, Any]:
     for path in candidates:
         if path.exists():
             with open(path) as f:
-                return cast(dict[Any, Any], json.load(f))
+                config = cast(dict[str, Any], json.load(f))
+            _apply_overrides(config, SeedOverrides())
+            return config
     raise FileNotFoundError(f"No seed config found. Tried: {', '.join(str(p) for p in candidates)}")
 
 

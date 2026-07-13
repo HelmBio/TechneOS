@@ -101,10 +101,10 @@ is defined in a single baseline migration, `migrations/versions/0001_initial_sch
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
 
-After migrating, `make seed` runs `core/database/seed.py` to create default
+After migrating, `make seed` runs `setup/database/seed.py` to create default
 roles, a default org/team, and an admin user (`admin@example.com` /
-`changeme123`, from `.techneos.<environment>.json` — falls back to the
-committed `.techneos.example.json` if no environment-specific file exists).
+`changeme123`, from `setup/database/.techneos.<environment>.json` — falls back to the
+committed `setup/database/.techneos.example.json` if no environment-specific file exists).
 Idempotent: re-running it upserts roles and only fills in missing fields on
 existing rows, so it's safe to run again after a `make down-v && make up`
 against a fresh volume.
@@ -137,11 +137,53 @@ never the database directly:
 - `packages/management` — the admin/registration toolkit, published as the
   `techneos-management` wheel. It holds the resource-removal scripts and the
   `management.registration` helpers (auth, environment/URL resolution, build +
-  register orchestration) that every package's `build_and_register.py` imports.
-  It's a **published dependency**: the platform's own publish scripts and
+  register orchestration) that the setup scripts and catalog
+  `build_and_register.py` scripts import.
+  It's a **published dependency**: the platform's own setup scripts and
   externally-authored catalog packages both import `management.registration`, so
   its distribution name and import path are a stable contract — don't rename them
   casually.
+
+## Platform setup (`setup/`) & the catalog contract
+
+`setup/` holds the platform-admin operations run once on a fresh deployment,
+after infra + schema are up (`make up`, `make migrate`) and **before** any
+catalog items are registered. These scripts are **not** part of any shipped
+wheel and are **not** imported by the services at runtime — they write to the
+DB or drive the gateway API directly:
+
+- `setup/database/seed.py` (`make seed`) — default roles, org/team, admin user. Reads
+  `setup/database/.techneos.<env>.json`.
+- `setup/wheels/{tool_runtime,management}.py` (`make publish-wheels`, via
+  `bin/build-register-platform-wheels.sh`) — build + publish the two wheels a
+  catalog repo depends on (`techneos-tool-runtime`, `techneos-management`) to
+  the package index, and record them in the `compute_artifacts` inventory.
+- `setup/register_platform_assistant.py` (`make register-platform-assistant`) —
+  create the default LLM provider + the built-in Platform Assistant agent via
+  the gateway API. (Needs the stack up + an admin token.)
+- `setup/register_compute_artifacts.py` — ingest a build-artifacts manifest
+  into the `compute_artifacts` inventory.
+
+**Zero runtime coupling:** services never import these. The one read helper
+they *do* share — `core.database.compute_artifacts.find_artifact` — stays in
+`core` (it's a pure inventory lookup, not seeding). Ruff lints `setup/`; mypy
+does not (operational scripts, like `packages/execution`).
+
+**The catalog repo contract.** The separate `techneos-catalog` repo holds the
+tools/agents/datasets/pipelines/apps. Each catalog package:
+- depends on **`techneos-management`** (in its `publish`/`tooling` dep group) —
+  its `build_and_register.py` imports `management.registration` /
+  `management.catalog`;
+- pypi tools are built for and dispatched into the **`techneos/tool-runtime`**
+  worker image;
+- contributes assistant tools via the `techneos.platform_assistant_tools`
+  entry-point group, and non-platform agents via `techneos.agents` (both
+  discovered lazily by the agent-service — `core` has no hard dependency on
+  catalog content).
+
+So `make publish-wheels` is what makes a catalog checkout resolvable: without
+those two wheels on the index, catalog `build_and_register.py` scripts can't
+install their build dependency.
 
 ## Web portal
 

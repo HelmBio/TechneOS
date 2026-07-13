@@ -267,19 +267,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         print(f"Warning: could not load LLM providers from DB: {exc}")
 
-    # Guarantee the built-in Platform Assistant agent exists (idempotent, best
-    # effort). On a fresh prod DB this no-ops until core.database.seed has created
-    # the admin user; the deploy stage then runs `python -m platform_assistant.seed`
-    # for a deterministic guarantee.
-    try:
-        from platform_assistant.seed import ensure_platform_assistant
-
-        async with get_async_session_context() as session:
-            if await ensure_platform_assistant(session):
-                await session.commit()
-                print("Seeded Platform Assistant agent definition")
-    except Exception as exc:
-        print(f"Warning: Platform Assistant seed skipped: {exc}")
+    # The built-in Platform Assistant agent is registered by the platform-admin
+    # setup step (`python setup/register_platform_assistant.py`), run after
+    # seeding and before catalog registration — not on service startup.
     yield
     await dispose_engine()
     print("Agent service stopped")

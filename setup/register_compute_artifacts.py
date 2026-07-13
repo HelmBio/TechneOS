@@ -1,8 +1,8 @@
 """Ingest a build-artifacts manifest into the compute_artifacts inventory.
 
-Runs *inside the gateway container* during the deploy stage (alongside
-``core.database.seed``), so it writes straight to the DB — no gateway HTTP call,
-no admin token. Platform-service and tool-runtime images are built in the
+A platform-admin setup step that writes straight to the DB — no gateway HTTP
+call, no admin token — run alongside ``setup/seed.py`` once the stack is up.
+Platform-service and tool-runtime images are built in the
 CodePipeline build stage where the gateway isn't reachable; ``build-and-push.sh``
 emits a manifest that this script ingests once the stack is up.
 
@@ -14,8 +14,8 @@ The manifest is a JSON array of objects::
 
 Read from a path argument or stdin::
 
-    uv run python -m core.database.register_compute_artifacts build-artifacts.json
-    uv run python -m core.database.register_compute_artifacts < manifest.json
+    python setup/register_compute_artifacts.py build-artifacts.json
+    python setup/register_compute_artifacts.py < manifest.json
 
 Idempotent: upserts on (kind, name, version, registry_url), matching the
 ``register_artifact`` CRUD used by the HTTP path.
