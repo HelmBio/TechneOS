@@ -281,7 +281,7 @@ async def list_task_runs(
                 outcome=r.outcome,
                 display_status=_display_status(r.status, r.outcome, None),
                 assigned_user_id=r.assigned_user_id,
-                assigned_user_name=(r.assigned_user.full_name if r.assigned_user else None),
+                assigned_user_email=(r.assigned_user.email if r.assigned_user else None),
                 assigned_team_slug=r.assigned_team_slug,
                 assigned_team_name=(
                     team_names.get(r.assigned_team_slug) if r.assigned_team_slug else None
@@ -292,13 +292,13 @@ async def list_task_runs(
                 pipeline_run_id=r.pipeline_run_id,
                 step_name=r.step_name,
                 started_by=r.started_by,
-                started_by_name=(r.starter.full_name if r.starter else None),
+                started_by_email=(r.starter.email if r.starter else None),
                 started_at=r.started_at,
                 updated_at=r.updated_at,
                 tool_run_id=None,
                 input_snapshot=r.input_params or {},
                 finished_by=r.finished_by,
-                finished_by_name=(r.finisher.full_name if r.finisher else None),
+                finished_by_email=(r.finisher.email if r.finisher else None),
                 finished_at=r.finished_at,
                 output_data=_merge_outputs(r.output_data, r.artifacts or []),
                 delegation_history=[],
@@ -321,10 +321,10 @@ async def build_response(session: AsyncSession, tr: TaskRun) -> TaskRunResponse:
     )
     artifacts = list(art_q.scalars())
 
-    assigned_user_name = None
+    assigned_user_email = None
     if tr.assigned_user_id:
         u = await session.get(User, tr.assigned_user_id)
-        assigned_user_name = u.full_name if u else None
+        assigned_user_email = u.email if u else None
     assigned_team_name = None
     if tr.assigned_team_slug:
         team_q = await session.execute(
@@ -332,18 +332,18 @@ async def build_response(session: AsyncSession, tr: TaskRun) -> TaskRunResponse:
         )
         team = team_q.scalar_one_or_none()
         assigned_team_name = team.name if team else None
-    project_lead_name = None
+    project_lead_email = None
     if tr.project_lead_id:
         u = await session.get(User, tr.project_lead_id)
-        project_lead_name = u.full_name if u else None
-    finished_by_name = None
+        project_lead_email = u.email if u else None
+    finished_by_email = None
     if tr.finished_by:
         u = await session.get(User, tr.finished_by)
-        finished_by_name = u.full_name if u else None
-    started_by_name = None
+        finished_by_email = u.email if u else None
+    started_by_email = None
     if tr.started_by:
         starter = await session.get(User, tr.started_by)
-        started_by_name = starter.full_name if starter else None
+        started_by_email = starter.email if starter else None
 
     output_schema: dict[str, Any] = {}
     input_schema: dict[str, Any] = {}
@@ -487,11 +487,11 @@ async def build_response(session: AsyncSession, tr: TaskRun) -> TaskRunResponse:
         input_schema=input_schema,
         finished_by=tr.finished_by,
         finished_at=tr.finished_at,
-        assigned_user_name=assigned_user_name,
+        assigned_user_email=assigned_user_email,
         assigned_team_name=assigned_team_name,
-        started_by_name=started_by_name,
-        finished_by_name=finished_by_name,
-        project_lead_name=project_lead_name,
+        started_by_email=started_by_email,
+        finished_by_email=finished_by_email,
+        project_lead_email=project_lead_email,
         tool_run_id=None,
         escalated_at=escalated_at,
         delegation_history=delegation_history,
@@ -546,12 +546,16 @@ async def user_can_act(
     tr: TaskRun,
     user_id: str,
     user_team_slug: str | None,
+    is_admin: bool = False,
 ) -> bool:
     """Return True if the user can act on the current holder.
 
     Acting = accept / submit / decline / delegate / update. The current
-    assignee (user or team member) plus the project lead may act.
+    assignee (user or team member) plus the project lead may act; an admin
+    may act on any run (parity with ``user_can_access``).
     """
+    if is_admin:
+        return True
     if tr.assigned_user_id == user_id:
         return True
     if tr.project_lead_id == user_id:

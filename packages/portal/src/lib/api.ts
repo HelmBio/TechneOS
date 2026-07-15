@@ -1176,8 +1176,6 @@ export interface HumanTaskRun {
   assigned_team_slug: string | null;
   project_lead_id: string | null;
   priority: string;
-  accepted_by: string | null;
-  accepted_at: string | null;
   finished_by: string | null;
   finished_at: string | null;
   due_at: string | null;
@@ -1211,12 +1209,11 @@ export interface HumanTaskRun {
   tool_slug: string | null;
   tool_id: string | null;
   tool_version_num: number | null;
-  assigned_user_name: string | null;
+  assigned_user_email: string | null;
   assigned_team_name: string | null;
-  project_lead_name: string | null;
-  accepted_by_name: string | null;
-  finished_by_name: string | null;
-  started_by_name: string | null;
+  project_lead_email: string | null;
+  finished_by_email: string | null;
+  started_by_email: string | null;
   inputs: Array<{
     id: string;
     file_name: string;

@@ -18,6 +18,7 @@ from core.database.postgres import get_async_session
 from core.models.common import PaginatedResponse, TokenPayload
 from core.models.pipeline import PipelineRun
 from core.pipeline_topology import merge, schema_defaults
+from core.utils import is_uuid
 from core.schemas.pipeline import (
     PipelineArtifactCreate,
     PipelineArtifactDownloadResponse,
@@ -32,7 +33,7 @@ from core.schemas.pipeline import (
     StepRunResponse,
     StepStatusUpdate,
 )
-from pipeline_service.crud.pipelines import get_pipeline
+from pipeline_service.crud.pipelines import get_pipeline, get_pipeline_by_slug
 from pipeline_service.crud.runs import (
     create_artifact,
     create_run,
@@ -227,8 +228,17 @@ async def submit_run(
     """
     org_id = _require_org(current_user)
 
-    # Validate pipeline exists and check access
-    pipeline = await get_pipeline(session, data.pipeline_id)
+    # Validate pipeline exists and check access. Accept a UUID or a slug, matching
+    # GET /pipelines/{identifier} — the portal routes by slug, so a run submitted
+    # from a pipeline page carries the slug, not the UUID.
+    if is_uuid(data.pipeline_id):
+        pipeline = await get_pipeline(session, data.pipeline_id)
+    else:
+        pipeline = await get_pipeline_by_slug(session, data.pipeline_id)
+        if pipeline is None:
+            raise HTTPException(
+                status_code=404, detail=f"Pipeline '{data.pipeline_id}' not found"
+            )
     check_resource_access(current_user, pipeline, resource_name="pipeline")
 
     # Resolve the version to run against
@@ -236,12 +246,12 @@ async def submit_run(
         from pipeline_service.crud.versions import get_pipeline_version
 
         version = await get_pipeline_version(session, data.version_id)
-        if version.pipeline_id != data.pipeline_id:
+        if version.pipeline_id != pipeline.id:
             raise HTTPException(
                 status_code=400, detail="version_id does not belong to this pipeline"
             )
     else:
-        _latest = await get_latest_active_version(session, data.pipeline_id)
+        _latest = await get_latest_active_version(session, pipeline.id)
         if _latest is None:
             raise HTTPException(
                 status_code=409,
@@ -367,6 +377,13 @@ async def list_runs_endpoint(
     _perm: bool = Depends(require_permission("pipeline-run", "read", "own")),
 ) -> PaginatedResponse:
     """List pipeline runs with optional filters."""
+    # The `pipeline_id` filter accepts a slug or a UUID (the portal routes pipeline
+    # pages by slug). Resolve a slug to its UUID before filtering; an unknown slug
+    # falls through and simply matches no runs.
+    if pipeline_id and not is_uuid(pipeline_id):
+        resolved = await get_pipeline_by_slug(session, pipeline_id)
+        pipeline_id = resolved.id if resolved is not None else pipeline_id
+
     scope_filters = build_scope_filters(current_user, PipelineRun, "pipeline-run")
     items, total = await list_runs(
         session,

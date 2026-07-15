@@ -21,6 +21,7 @@
         "pipeline:*:team",
         "pipeline-run:*:team",
         "tool-run:*:team",
+        "task-run:*:team",
         "tool:read:team",
         "app:*:team",
         "user:read:team",
@@ -48,6 +49,8 @@
         "tool-run:read:own",
         "tool-run:execute:own",
         "tool-run:update:own",
+        "task-run:read:own",
+        "task-run:update:own",
         "tool:read:team",
         "result:read:team"
       ]

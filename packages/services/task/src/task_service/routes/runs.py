@@ -119,7 +119,7 @@ async def _resolve_for_access(session: AsyncSession, user: TokenPayload, tr: Tas
 async def _resolve_for_action(session: AsyncSession, user: TokenPayload, tr: TaskRun) -> None:
     """Raise 403 unless the caller can act on the current holder."""
     team_slug = await _resolve_user_team_slug(session, user)
-    if not await user_can_act(session, tr, user.sub, team_slug):
+    if not await user_can_act(session, tr, user.sub, team_slug, _is_admin(user)):
         raise HTTPException(
             status_code=403,
             detail="Only the current assignee, a team member, or the project lead may act on this task run",
@@ -223,7 +223,7 @@ async def create_task_run_internal_endpoint(
     data: TaskRunCreateInternal,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "create", "org")),
+    _perm: bool = Depends(require_permission("task-run", "create", "org")),
 ) -> TaskRunResponse:
     """Create a task run from the worker (HumanBackend)."""
     tool, version, hc = await _load_version_chain(session, data.tool_slug, data.tool_version_id)
@@ -315,7 +315,7 @@ async def create_task_run_from_tool_endpoint(
     data: TaskRunCreateFromTool,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "create", "org")),
+    _perm: bool = Depends(require_permission("task-run", "create", "org")),
 ) -> TaskRunResponse:
     """User-facing — run a human tool directly (no pipeline)."""
     org_id = _require_org(current_user)
@@ -459,7 +459,7 @@ async def get_task_run_endpoint(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "read", "own")),
+    _perm: bool = Depends(require_permission("task-run", "read", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_access(session, current_user, tr)
@@ -471,7 +471,7 @@ async def accept_task_run_endpoint(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_action(session, current_user, tr)
@@ -492,7 +492,7 @@ async def submit_task_run_endpoint(
     data: TaskRunSubmit,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_action(session, current_user, tr)
@@ -522,7 +522,7 @@ async def post_task_run_action_endpoint(
     file: UploadFile | None = File(None),
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskRunResponse:
     """Post a threaded ``update`` action: a message and/or a file, optionally
     in reply to a prior action (``parent_event_id``)."""
@@ -567,7 +567,7 @@ async def decline_task_run_endpoint(
     data: TaskRunDecline | None = None,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_action(session, current_user, tr)
@@ -589,7 +589,7 @@ async def delegate_task_run_endpoint(
     data: TaskRunDelegate,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_action(session, current_user, tr)
@@ -612,7 +612,7 @@ async def escalate_task_run_endpoint(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "org")),
+    _perm: bool = Depends(require_permission("task-run", "update", "org")),
 ) -> TaskRunResponse:
     """Escalate to project lead. Called by HumanBackend; admin can also invoke."""
     tr = await get_task_run(session, task_run_id)
@@ -634,7 +634,7 @@ async def cancel_task_run_endpoint(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "delete", "own")),
+    _perm: bool = Depends(require_permission("task-run", "delete", "own")),
 ) -> TaskRunResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_access(session, current_user, tr)
@@ -649,7 +649,7 @@ async def delete_task_run_endpoint(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "delete", "own")),
+    _perm: bool = Depends(require_permission("task-run", "delete", "own")),
 ) -> None:
     """Hard-delete a TaskRun (cascades to events / artifacts)."""
     tr = await get_task_run(session, task_run_id)
@@ -711,7 +711,7 @@ async def upload_task_input_endpoint(
     file: UploadFile = File(...),
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "create", "org")),
+    _perm: bool = Depends(require_permission("task-run", "create", "org")),
 ) -> TaskInputUploadResponse:
     """Stage an input file for a human task in scratch space.
 
@@ -764,7 +764,7 @@ async def download_task_run_input(
     task_run_id: str,
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "read", "own")),
+    _perm: bool = Depends(require_permission("task-run", "read", "own")),
 ) -> TaskFileDownloadResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_access(session, current_user, tr)
@@ -806,7 +806,7 @@ async def upload_task_output_endpoint(
     file: UploadFile = File(...),
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "update", "own")),
+    _perm: bool = Depends(require_permission("task-run", "update", "own")),
 ) -> TaskOutputUploadResponse:
     """Stage an output file in scratch space (not yet stored in the DB).
 
@@ -866,7 +866,7 @@ async def download_task_run_output(
     file_name: str = Query(..., description="The filename to download"),
     current_user: TokenPayload = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
-    _perm: bool = Depends(require_permission("task_run", "read", "own")),
+    _perm: bool = Depends(require_permission("task-run", "read", "own")),
 ) -> TaskFileDownloadResponse:
     tr = await get_task_run(session, task_run_id)
     await _resolve_for_access(session, current_user, tr)

@@ -25,7 +25,7 @@ class TokenInfo:
 
 
 # Where cached login tokens live (~/.techneos/<env>_token.json). Override TECHNEOS_CONFIG_DIR.
-DDT_CACHE_DIR = Path(os.environ.get("TECHNEOS_CONFIG_DIR", str(Path.home() / ".techneos")))
+TECHNEOS_CACHE_DIR = Path(os.environ.get("TECHNEOS_CONFIG_DIR", str(Path.home() / ".techneos")))
 
 
 def _get_token_cache_path(env_name: str = "") -> Path:
@@ -35,8 +35,8 @@ def _get_token_cache_path(env_name: str = "") -> Path:
     Otherwise, returns ``~/.techneos/token.json`` for backwards compatibility.
     """
     if env_name:
-        return DDT_CACHE_DIR / f"{env_name}_token.json"
-    return DDT_CACHE_DIR / "token.json"
+        return TECHNEOS_CACHE_DIR / f"{env_name}_token.json"
+    return TECHNEOS_CACHE_DIR / "token.json"
 
 
 def decode_jwt(token: str) -> dict[str, Any]:

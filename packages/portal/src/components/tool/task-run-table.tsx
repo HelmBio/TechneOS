@@ -52,7 +52,7 @@ export default function TaskRunTable({ taskRuns, showTaskColumn = false, emptyMe
                 {a.tool_version_num != null ? `v${a.tool_version_num}` : "—"}
               </td>
               <td className="px-4 py-3 text-sm text-gray-600">
-                {a.assigned_user_name || a.assigned_team_name || "—"}
+                {a.assigned_user_email || a.assigned_team_name || "—"}
               </td>
               <td className="px-4 py-3">
                 <StatusBadge status={a.display_status} />
@@ -61,13 +61,13 @@ export default function TaskRunTable({ taskRuns, showTaskColumn = false, emptyMe
                 {a.due_at ? new Date(a.due_at).toLocaleDateString() : "—"}
               </td>
               <td className="px-4 py-3 text-sm text-gray-600">
-                {a.started_by_name || "—"}
+                {a.started_by_email || "—"}
               </td>
               <td className="px-4 py-3 text-sm text-gray-500">
                 {new Date(a.started_at).toLocaleDateString()}
               </td>
               <td className="px-4 py-3 text-sm text-gray-600">
-                {a.finished_by_name || "—"}
+                {a.finished_by_email || "—"}
               </td>
               <td className="px-4 py-3 text-sm text-gray-500">
                 {a.finished_at ? new Date(a.finished_at).toLocaleDateString() : "—"}

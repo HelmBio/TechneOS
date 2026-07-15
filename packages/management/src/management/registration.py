@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 
 from management.auth import (
     _check_api_token,
+    _get_token_cache_path,
     _load_cached_token,
     _login,
     _save_cached_token,
@@ -331,8 +332,10 @@ def authenticate(
     cached = _load_cached_token(env_name)
     if cached:
         token, _base_url = cached
-        if _check_api_token(token, api_url) is not None:
-            print(f"Using cached token for {env_name} environment.")
+        info = _check_api_token(token, api_url)
+        if info is not None:
+            print(f"Using token from {_get_token_cache_path(env_name)}")
+            print(f"Authenticated as {info.email} (role: {info.role})")
             return token
 
     if not email:
@@ -342,7 +345,11 @@ def authenticate(
 
     token = _login(api_url, email, password)
     _save_cached_token(token, api_url, env_name)
-    print(f"Authenticated as {email}")
+    info = _check_api_token(token, api_url)
+    if info is not None:
+        print(f"Authenticated as {info.email} (role: {info.role})")
+    else:
+        print(f"Authenticated as {email}")
     return token
 
 
@@ -441,8 +448,8 @@ def start_session(args: argparse.Namespace) -> Session:
     # before resolve_environment reads them.
     load_env_file(env_arg)
     env = resolve_environment(env_arg)
-    print(f"=== Target environment: {env.name} ===")
-    print(f"  API URL: {env.api_url}")
+    print(f"Environment: {env}")
+    print(flush=True)
     token = authenticate(
         env.api_url, env.name, getattr(args, "email", None), getattr(args, "password", None)
     )

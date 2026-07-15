@@ -10,6 +10,7 @@ import {
   apiPost,
   apiUploadTaskOutput,
   apiPostTaskAction,
+  ApiError,
   type HumanTaskRun,
   type TaskRunSubmitPayload,
   type PaginatedResponse,
@@ -26,8 +27,9 @@ import { RunFileTable, type RunFile } from "@/components/run/run-file-table";
 export default function AssignmentDetailPage() {
   const execTaskLabel = useLabel("exec.task.plural");
   const { id } = useParams<{ id: string }>();
-  const { user, loading: authLoading } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
   const [assignment, setAssignment] = useState<HumanTaskRun | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
@@ -152,6 +154,7 @@ export default function AssignmentDetailPage() {
     apiGet<HumanTaskRun>(`/api/v1/task-runs/${id}`)
       .then((data) => {
         setAssignment(data);
+        setLoadError("");
         if (!hasInitialExpand.current) {
           hasInitialExpand.current = true;
           const updates = (data.event_history || []).filter(
@@ -168,7 +171,14 @@ export default function AssignmentDetailPage() {
           }
         }
       })
-      .catch(() => setAssignment(null))
+      .catch((e) => {
+        setAssignment(null);
+        setLoadError(
+          e instanceof ApiError && e.status === 403
+            ? "You don't have access to this task run."
+            : "Task run not found.",
+        );
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -286,7 +296,7 @@ export default function AssignmentDetailPage() {
       </p>
     );
   if (!assignment)
-    return <p className="p-8 text-red-500">Assignment not found.</p>;
+    return <p className="p-8 text-red-500">{loadError || "Task run not found."}</p>;
 
   const isAssignee = assignment.assigned_user_id === user.id;
   const isCreator = assignment.started_by === user.id;
@@ -302,6 +312,16 @@ export default function AssignmentDetailPage() {
       assignment.status === "in_progress") &&
     isAssignee;
   const canCancel = assignment.status !== "terminal" && isCreator;
+  // The holder (assignee/team member/project lead) delegates their own work.
+  const canDelegate = canAccept || canSubmit || canDecline;
+  // An admin can reassign any open run to another user — mirrors the admin
+  // bypass in the task service's user_can_act. Shown only when the admin isn't
+  // already the holder (who sees Delegate), and only for delegatable statuses.
+  const isAdmin = role === "platform_admin" || role === "org_admin";
+  const canReassign =
+    isAdmin &&
+    !canDelegate &&
+    ["pending", "accepted", "in_progress"].includes(assignment.status);
 
   return (
     <div className="space-y-6">
@@ -341,7 +361,7 @@ export default function AssignmentDetailPage() {
       ) : null}
       {assignment.escalated_at ? (
         <div className="rounded border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
-          Escalated to {assignment.escalated_to || "project lead"} on{" "}
+          Escalated to {assignment.project_lead_email || "project lead"} on{" "}
           {new Date(assignment.escalated_at).toLocaleString()}
         </div>
       ) : null}
@@ -378,13 +398,22 @@ export default function AssignmentDetailPage() {
                 {actionLoading ? "..." : "Decline"}
               </button>
             )}
-            {(canAccept || canSubmit || canDecline) && (
+            {canDelegate && (
               <button
                 onClick={() => setShowDelegate(true)}
                 disabled={actionLoading}
                 className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
               >
                 Delegate
+              </button>
+            )}
+            {canReassign && (
+              <button
+                onClick={() => setShowDelegate(true)}
+                disabled={actionLoading}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Reassign
               </button>
             )}
             {canCancel && (
@@ -400,11 +429,11 @@ export default function AssignmentDetailPage() {
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
-            {(assignment.assigned_user_name || assignment.assigned_team_name) && (
+            {(assignment.assigned_user_email || assignment.assigned_team_name) && (
               <div className="flex items-center gap-1">
                 <span className="text-gray-400">Assigned To:</span>
                 <span className="text-gray-700">
-                  {assignment.assigned_user_name || assignment.assigned_team_name}
+                  {assignment.assigned_user_email || assignment.assigned_team_name}
                 </span>
               </div>
             )}
@@ -414,10 +443,10 @@ export default function AssignmentDetailPage() {
                 {assignment.priority || "medium"}
               </span>
             </div>
-            {assignment.project_lead_name && (
+            {assignment.project_lead_email && (
               <div className="flex items-center gap-1">
                 <span className="text-gray-400">Project Lead:</span>
-                <span className="text-gray-700">{assignment.project_lead_name}</span>
+                <span className="text-gray-700">{assignment.project_lead_email}</span>
               </div>
             )}
             {assignment.due_at && (
@@ -431,7 +460,7 @@ export default function AssignmentDetailPage() {
             <div className="flex items-center gap-1">
               <span className="text-gray-400">Started By:</span>
               <span className="text-gray-700">
-                {assignment.started_by_name || "—"}
+                {assignment.started_by_email || "—"}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -440,10 +469,10 @@ export default function AssignmentDetailPage() {
                 {new Date(assignment.started_at).toLocaleDateString()}
               </span>
             </div>
-            {assignment.finished_by_name && (
+            {assignment.finished_by_email && (
               <div className="flex items-center gap-1">
                 <span className="text-gray-400">Finished By:</span>
-                <span className="text-gray-700">{assignment.finished_by_name}</span>
+                <span className="text-gray-700">{assignment.finished_by_email}</span>
               </div>
             )}
             {assignment.finished_at && (
@@ -756,7 +785,7 @@ export default function AssignmentDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Delegate Task Run
+              {canReassign ? "Reassign Task Run" : "Delegate Task Run"}
             </h2>
             {delegateError ? (
               <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -766,7 +795,7 @@ export default function AssignmentDetailPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Delegate To
+                  {canReassign ? "Assign To" : "Delegate To"}
                 </label>
                 <select
                   value={delegateTo}
@@ -776,7 +805,7 @@ export default function AssignmentDetailPage() {
                   <option value="">Select a user...</option>
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.full_name || u.email}
+                      {u.email}
                     </option>
                   ))}
                 </select>
@@ -789,7 +818,7 @@ export default function AssignmentDetailPage() {
                   type="text"
                   value={delegateReason}
                   onChange={(e) => setDelegateReason(e.target.value)}
-                  placeholder="Why are you delegating?"
+                  placeholder={canReassign ? "Why are you reassigning?" : "Why are you delegating?"}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>

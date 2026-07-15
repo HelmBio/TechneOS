@@ -423,7 +423,7 @@ export default function PipelineDetailPage() {
       }
 
       const run = await apiPost<PipelineRun>("/api/v1/pipeline-runs", {
-        pipeline_id: id,
+        pipeline_id: pipeline.id,
         version_id: selectedVersionId || undefined,
         parameters: params,
         inputs,
@@ -539,6 +539,10 @@ export default function PipelineDetailPage() {
     (hasPermission(permissions, "pipeline", "update", "org") ||
       (hasPermission(permissions, "pipeline", "update", "own") && pipeline.created_by === user.id)) &&
     (pipeline.org_id === user.org_id || hasPermission(permissions, "pipeline", "update", "platform"));
+  // Duplicating opens the new-pipeline form pre-filled from this pipeline's shape,
+  // so it is gated on creating pipelines, not editing this one. Unlike a tool, a
+  // pipeline has no compute artifact, so a copied definition stands on its own.
+  const canDuplicate = hasPermission(permissions, "pipeline", "create", "*");
 
   const exportPipeline = () => {
     const data = {
@@ -584,6 +588,24 @@ export default function PipelineDetailPage() {
         onToggleFollow={() => toggle(pipeline.id)}
         onEdit={canUpdate ? () => setShowEditModal(true) : undefined}
         onExport={exportPipeline}
+        actions={
+          canDuplicate ? (
+            <div className="relative group inline-flex">
+              <Link
+                href={`/pipelines/new?from=${pipeline.id}`}
+                aria-label="Duplicate pipeline"
+                className="rounded-full p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                </svg>
+              </Link>
+              <span className="pointer-events-none absolute z-50 w-max max-w-[200px] whitespace-normal rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 top-full right-0 mt-1">
+                Duplicate into a new pipeline
+              </span>
+            </div>
+          ) : undefined
+        }
       />
 
       <DetailMetadata

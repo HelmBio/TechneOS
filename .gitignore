@@ -27,6 +27,7 @@ docker-compose.override.yml
 # bin/dev.sh runtime state
 .dev-logs/
 .dev-pids/
+.dev-tmp/
 
 # IDE / editors
 .idea/

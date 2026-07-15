@@ -181,11 +181,11 @@ class TaskRunResponse(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict)
     finished_by: str | None = None
     finished_at: datetime | None = None
-    assigned_user_name: str | None = None
+    assigned_user_email: str | None = None
     assigned_team_name: str | None = None
-    started_by_name: str | None = None
-    finished_by_name: str | None = None
-    project_lead_name: str | None = None
+    started_by_email: str | None = None
+    finished_by_email: str | None = None
+    project_lead_email: str | None = None
 
     # --- Back-compat aliases for the existing frontend ---
     # The old shape exposed ``tool_run_id`` (the backing ToolRun, which we
@@ -225,7 +225,7 @@ class TaskRunListItem(BaseModel):
     display_status: str
 
     assigned_user_id: str | None = None
-    assigned_user_name: str | None = None
+    assigned_user_email: str | None = None
     assigned_team_slug: str | None = None
     assigned_team_name: str | None = None
     project_lead_id: str | None = None
@@ -238,7 +238,7 @@ class TaskRunListItem(BaseModel):
     step_name: str | None = None
 
     started_by: str
-    started_by_name: str | None = None
+    started_by_email: str | None = None
     started_at: datetime
     updated_at: datetime
 
@@ -246,7 +246,7 @@ class TaskRunListItem(BaseModel):
     tool_run_id: str | None = None
     input_snapshot: dict[str, Any] = Field(default_factory=dict)
     finished_by: str | None = None
-    finished_by_name: str | None = None
+    finished_by_email: str | None = None
     finished_at: datetime | None = None
     output_data: dict[str, Any] | None = None
     delegation_history: list[dict[str, Any]] = Field(default_factory=list)

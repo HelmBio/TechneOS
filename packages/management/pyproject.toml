@@ -1,6 +1,6 @@
 [project]
 name = "techneos-management"
-version = "0.2.0"
+version = "0.1.0"
 description = "Management scripts for TechneOS — resource deletion, cleanup, and admin operations"
 requires-python = ">=3.12"
 # The removal scripts are stdlib-only; registration adds these.

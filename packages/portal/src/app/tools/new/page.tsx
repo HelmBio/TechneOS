@@ -56,11 +56,12 @@ function ToolFormPage() {
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
 
-  // Mode detection
-  const fromId = searchParams.get("from"); // duplicate
+  // Mode detection. Tools are not duplicable — a tool is backed by a compute
+  // artifact (a published wheel or image), so a copied definition would dangle
+  // against the original's artifact. Create a fresh tool instead.
   const editId = searchParams.get("edit"); // edit
-  const mode = editId ? "edit" : fromId ? "duplicate" : "create";
-  const sourceId = editId || fromId;
+  const mode = editId ? "edit" : "create";
+  const sourceId = editId;
 
   const [loading, setLoading] = useState(!!sourceId);
   const [saving, setSaving] = useState(false);
@@ -79,7 +80,7 @@ function ToolFormPage() {
     readme: "",
   });
 
-  // Load source tool for duplicate/edit
+  // Load source tool for edit
   useEffect(() => {
     if (!sourceId || authLoading || !user) return;
     setLoading(true);
@@ -87,9 +88,8 @@ function ToolFormPage() {
       .then((data) => {
         const tags = data.tags.join(", ");
         setTool({
-          name: mode === "duplicate" ? `${data.name} (copy)` : data.name,
-          slug:
-            mode === "duplicate" ? `${data.slug}-copy` : data.slug,
+          name: data.name,
+          slug: data.slug,
           description: data.description || "",
           category: data.category,
           tool_type: data.tool_type,
@@ -97,9 +97,7 @@ function ToolFormPage() {
           is_public: data.is_public,
           readme: data.readme || "",
         });
-        if (mode === "duplicate" || mode === "edit") {
-          setSlugManual(true);
-        }
+        setSlugManual(true);
       })
       .catch(() => setError("Failed to load tool"))
       .finally(() => setLoading(false));
@@ -182,21 +180,11 @@ function ToolFormPage() {
           {toolsLabel}
         </Link>
         <span>/</span>
-        <span>
-          {mode === "edit"
-            ? "Update Tool"
-            : mode === "duplicate"
-              ? "Duplicate Tool"
-              : "New Tool Definition"}
-        </span>
+        <span>{mode === "edit" ? "Update Tool" : "New Tool Definition"}</span>
       </div>
 
       <h1 className="text-2xl font-bold text-gray-900">
-        {mode === "edit"
-          ? "Update Tool"
-          : mode === "duplicate"
-            ? "Duplicate Tool"
-            : "Register New Tool Definition"}
+        {mode === "edit" ? "Update Tool" : "Register New Tool Definition"}
       </h1>
 
       {error && (
@@ -392,13 +380,7 @@ function ToolFormPage() {
           disabled={saving || !tool.name || !tool.slug}
           className="rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {saving
-            ? "Saving..."
-            : mode === "edit"
-              ? "Update Tool"
-              : mode === "duplicate"
-                ? "Create Copy"
-                : "Submit"}
+          {saving ? "Saving..." : mode === "edit" ? "Update Tool" : "Submit"}
         </button>
         <Link
           href={sourceId ? `/tools/${sourceId}` : "/tools"}
