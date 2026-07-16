@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# `make backup` output — database dumps and bucket contents, i.e. real user
+# data and secrets. Never committable.
+backups/
+
 # Python bytecode & build artifacts
 __pycache__/
 *.py[cod]

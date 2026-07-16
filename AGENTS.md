@@ -101,6 +101,15 @@ is defined in a single baseline migration, `migrations/versions/0001_initial_sch
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
 
+`make backup` ([`bin/backup.sh`](bin/backup.sh)) captures everything the platform
+keeps state in — the `techneos` and `airflow` databases, the object store bucket,
+and the Valkey RDB — into `./backups/<timestamp>/`, alongside a generated
+`RESTORE.md` carrying the exact restore commands for that backup. It resolves
+containers by Compose service label rather than by name, so it works whatever the
+project is called. It exits non-zero and names what it missed if any component
+could not be captured; a backup tool reporting success it didn't earn is worse
+than one that fails. `backups/` is gitignored: those dumps are real user data.
+
 After migrating, `make seed` runs `setup/database/seed.py` to create default
 roles, a default org/team, and an admin user (`admin@example.com` /
 `changeme123`, from `setup/database/.techneos.<environment>.json` — falls back to the

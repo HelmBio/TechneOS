@@ -39,6 +39,9 @@ migrate-new: ## Create new migration (usage: make migrate-new msg="add users tab
 migrate-down: ## Rollback last migration
 	uv run alembic downgrade -1
 
+backup: ## Dump both databases + the object store to ./backups/<timestamp>/
+	./bin/backup.sh
+
 # --- Platform setup (run once after infra is up, before catalog registration) ---
 # See setup/ for the full sequence a platform admin runs on a fresh deployment.
 
