@@ -109,13 +109,27 @@ Database Safety Rules above — never run migrations against a production databa
 without explicit permission.
 
 `make backup` ([`bin/backup.sh`](bin/backup.sh)) captures everything the platform
-keeps state in — the `techneos` and `airflow` databases, the object store bucket,
-and the Valkey RDB — into `./backups/<timestamp>/`, alongside a generated
-`RESTORE.md` carrying the exact restore commands for that backup. It resolves
-containers by Compose service label rather than by name, so it works whatever the
-project is called. It exits non-zero and names what it missed if any component
-could not be captured; a backup tool reporting success it didn't earn is worse
-than one that fails. `backups/` is gitignored: those dumps are real user data.
+keeps state in — the `techneos`, `keycloak` and `airflow` databases, the object
+store bucket, and the Valkey RDB — into `./backups/<timestamp>/`, alongside a
+generated `RESTORE.md` carrying the exact restore commands for that backup. It
+resolves containers by Compose service label rather than by name, so it works
+whatever the project is called. It exits non-zero and names what it missed if any
+component could not be captured; a backup tool reporting success it didn't earn is
+worse than one that fails. `backups/` is gitignored: those dumps are real user
+data. Keycloak is in there because it owns the realms and SSO identities — the
+`techneos` database alone does not describe who can log in.
+
+`make reset-data` ([`bin/reset-data.sh`](bin/reset-data.sh)) empties the same set,
+dropping each database's schema rather than truncating so a restore lands on a
+target that is genuinely empty — `pg_restore --clean` replaces what a dump
+contains and leaves everything else, making a restore onto a live database a merge
+rather than a copy. It refuses outright unless `ENVIRONMENT=development`, prints
+what it is about to destroy with sizes, and requires the environment name typed
+back. Measure with tools the target image actually has: the minio image has no
+`find`, and a missing tool reporting an empty bucket is a lie told exactly where
+someone decides whether to proceed. After a reset, either restore a backup, or
+`make migrate && make seed` plus `docker compose restart keycloak airflow` —
+Keycloak re-imports its realm at startup when the realm is absent.
 
 After migrating, `make seed` runs `setup/database/seed.py` to create default
 roles, a default org/team, and an admin user (`admin@example.com` /

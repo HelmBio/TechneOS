@@ -10,6 +10,7 @@
 #
 # Backs up:
 #   - PostgreSQL: techneos database (main application data)
+#   - PostgreSQL: keycloak database (realms, SSO identities, IdP config)
 #   - PostgreSQL: airflow database (pipeline orchestration)
 #   - MinIO: techneos-data bucket (uploaded datasets/files and pipeline run artifacts)
 #   - Valkey: RDB dump (cache/pub-sub state)
@@ -61,27 +62,41 @@ echo "Timestamp: $TIMESTAMP"
 echo "Backup directory: $BACKUP_DIR"
 echo ""
 
-# --- PostgreSQL: techneos ---
-echo "[1/4] Backing up PostgreSQL: techneos..."
-docker exec -e PGPASSWORD="$PG_PASSWORD" "$POSTGRES_CONTAINER" \
-  pg_dump -U "$PG_USER" -d techneos --format=custom --clean --if-exists \
-  > "$BACKUP_DIR/techneos.dump"
-echo "  → $BACKUP_DIR/techneos.dump ($(du -h "$BACKUP_DIR/techneos.dump" | cut -f1))"
+# --- PostgreSQL ---
+# One routine for all three: they differ only in name and in whether their
+# absence is a problem. Duplicating it per database is how they drift apart.
+_dump_db() {
+  local db="$1" step="$2" required="${3:-no}"
+  echo "[$step/5] Backing up PostgreSQL: $db..."
 
-# --- PostgreSQL: airflow ---
-echo "[2/4] Backing up PostgreSQL: airflow..."
-if docker exec -e PGPASSWORD="$PG_PASSWORD" "$POSTGRES_CONTAINER" \
-     psql -U "$PG_USER" -lqt | grep -qw airflow; then
-  docker exec -e PGPASSWORD="$PG_PASSWORD" "$POSTGRES_CONTAINER" \
-    pg_dump -U "$PG_USER" -d airflow --format=custom --clean --if-exists \
-    > "$BACKUP_DIR/airflow.dump"
-  echo "  → $BACKUP_DIR/airflow.dump ($(du -h "$BACKUP_DIR/airflow.dump" | cut -f1))"
-else
-  echo "  → Skipped (airflow database does not exist)"
-fi
+  if ! docker exec -e PGPASSWORD="$PG_PASSWORD" "$POSTGRES_CONTAINER" \
+         psql -U "$PG_USER" -lqt 2>/dev/null | cut -d'|' -f1 | grep -qw "$db"; then
+    if [ "$required" = "required" ]; then
+      echo "  → FAILED: $db database does not exist" >&2
+      FAILED+=("postgres:$db")
+    else
+      echo "  → Skipped ($db database does not exist)"
+    fi
+    return 0
+  fi
+
+  if docker exec -e PGPASSWORD="$PG_PASSWORD" "$POSTGRES_CONTAINER" \
+       pg_dump -U "$PG_USER" -d "$db" --format=custom --clean --if-exists \
+       > "$BACKUP_DIR/$db.dump" 2>/dev/null; then
+    echo "  → $BACKUP_DIR/$db.dump ($(du -h "$BACKUP_DIR/$db.dump" | cut -f1))"
+  else
+    rm -f "$BACKUP_DIR/$db.dump"
+    echo "  → FAILED: could not dump $db" >&2
+    FAILED+=("postgres:$db")
+  fi
+}
+
+_dump_db techneos 1 required   # the platform's own data
+_dump_db keycloak 2            # realms, SSO identities, identity-provider config
+_dump_db airflow  3            # pipeline orchestration state
 
 # --- MinIO: techneos-data ---
-echo "[3/4] Backing up MinIO: techneos-data bucket..."
+echo "[4/5] Backing up MinIO: techneos-data bucket..."
 if command -v mc &>/dev/null; then
   if mc alias set "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_USER" "$MINIO_PASS" --quiet 2>/dev/null &&
      mc mirror "$MINIO_ALIAS/techneos-data" "$BACKUP_DIR/minio/techneos-data" --quiet 2>/dev/null; then
@@ -119,7 +134,7 @@ else
 fi
 
 # --- Valkey (Redis-compatible) ---
-echo "[4/4] Backing up Valkey..."
+echo "[5/5] Backing up Valkey..."
 # Trigger a synchronous save
 docker exec "$VALKEY_CONTAINER" valkey-cli BGSAVE >/dev/null 2>&1 || true
 sleep 1
@@ -153,41 +168,40 @@ cat > "$RESTORE_FILE" <<EOF
 - Docker containers must be running (\`make up\`)
 - Restore will **overwrite** existing data — back up current state first if needed
 
-## 1. PostgreSQL: techneos (main application data)
+## Emptying first (optional)
+
+\`pg_restore --clean\` replaces the objects this backup contains, but leaves
+behind anything created since. For a target identical to the source, empty it
+first: \`make reset-data\`.
 
 EOF
 
-if [ -f "$BACKUP_DIR/techneos.dump" ]; then
+# One section per database — same shape, so generate rather than repeat.
+_restore_section() {
+  local n="$1" db="$2" what="$3"
   cat >> "$RESTORE_FILE" <<EOF
+## $n. PostgreSQL: $db ($what)
+
+EOF
+  if [ -f "$BACKUP_DIR/$db.dump" ]; then
+    cat >> "$RESTORE_FILE" <<EOF
 \`\`\`bash
-docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d techneos --clean --if-exists < $BACKUP_DIR/techneos.dump
+docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d $db --clean --if-exists < $BACKUP_DIR/$db.dump
 \`\`\`
 
 EOF
-else
-  echo "*Not included in this backup.*" >> "$RESTORE_FILE"
-  echo "" >> "$RESTORE_FILE"
-fi
+  else
+    echo "*Not included in this backup.*" >> "$RESTORE_FILE"
+    echo "" >> "$RESTORE_FILE"
+  fi
+}
+
+_restore_section 1 techneos "main application data"
+_restore_section 2 keycloak "realms, SSO identities, identity-provider config"
+_restore_section 3 airflow "pipeline orchestration"
 
 cat >> "$RESTORE_FILE" <<EOF
-## 2. PostgreSQL: airflow (pipeline orchestration)
-
-EOF
-
-if [ -f "$BACKUP_DIR/airflow.dump" ]; then
-  cat >> "$RESTORE_FILE" <<EOF
-\`\`\`bash
-docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d airflow --clean --if-exists < $BACKUP_DIR/airflow.dump
-\`\`\`
-
-EOF
-else
-  echo "*Not included in this backup.*" >> "$RESTORE_FILE"
-  echo "" >> "$RESTORE_FILE"
-fi
-
-cat >> "$RESTORE_FILE" <<EOF
-## 3. MinIO: techneos-data bucket (datasets and uploaded files)
+## 4. MinIO: techneos-data bucket (datasets and uploaded files)
 
 EOF
 
@@ -214,7 +228,7 @@ else
 fi
 
 cat >> "$RESTORE_FILE" <<EOF
-## 4. Valkey (cache and pub/sub state)
+## 5. Valkey (cache and pub/sub state)
 
 EOF
 
@@ -239,12 +253,11 @@ Stop services first (Ctrl+C on bin/dev.sh) then run:
 \`\`\`bash
 EOF
 
-if [ -f "$BACKUP_DIR/techneos.dump" ]; then
-  echo "docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d techneos --clean --if-exists < $BACKUP_DIR/techneos.dump" >> "$RESTORE_FILE"
-fi
-if [ -f "$BACKUP_DIR/airflow.dump" ]; then
-  echo "docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d airflow --clean --if-exists < $BACKUP_DIR/airflow.dump" >> "$RESTORE_FILE"
-fi
+for _db in techneos keycloak airflow; do
+  if [ -f "$BACKUP_DIR/$_db.dump" ]; then
+    echo "docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d $_db --clean --if-exists < $BACKUP_DIR/$_db.dump" >> "$RESTORE_FILE"
+  fi
+done
 if [ -d "$BACKUP_DIR/minio/techneos-data" ] && [ "$(ls -A "$BACKUP_DIR/minio/techneos-data" 2>/dev/null)" ]; then
   echo "docker cp $BACKUP_DIR/minio/techneos-data/. $MINIO_CONTAINER:/data/techneos-data/" >> "$RESTORE_FILE"
 fi
