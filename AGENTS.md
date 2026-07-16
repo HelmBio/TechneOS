@@ -39,7 +39,14 @@ If you need to run anything against production data, **ask the user first**.
 
 ## CRITICAL: Git Commit Policy
 
-**NEVER automatically commit changes.** Always wait for the user to explicitly ask you to commit. Stage and review changes, but do not run `git commit` unless instructed.
+**NEVER automatically commit changes to `main`.** Work on a feature branch and
+commit there as you go — that is what branches are for, and a reviewable series of
+commits beats a pile of unstaged edits.
+
+What needs the user's word is **landing**: `git merge` onto `main` and `git push`.
+Wait for an explicit instruction each time; approval for one merge is not approval
+for the next. Branches stay local — only `main` is ever pushed, via
+`git merge --ff-only <branch>` then a single push.
 
 ## Build & Run
 
