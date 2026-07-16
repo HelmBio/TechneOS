@@ -45,6 +45,9 @@ backup: ## Dump every database + the object store to ./backups/<timestamp>/
 reset-data: ## DESTRUCTIVE — empty every database, bucket and cache (prompts first)
 	./bin/reset-data.sh
 
+restore: ## Restore from a backup (usage: make restore dir=./backups/<timestamp>)
+	./bin/restore.sh $(dir)
+
 # --- Platform setup (run once after infra is up, before catalog registration) ---
 # See setup/ for the full sequence a platform admin runs on a fresh deployment.
 

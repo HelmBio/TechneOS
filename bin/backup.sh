@@ -234,9 +234,14 @@ EOF
 
 if [ -f "$BACKUP_DIR/valkey.rdb" ]; then
   cat >> "$RESTORE_FILE" <<EOF
+Stop it first: valkey writes memory to \`dump.rdb\` as it shuts down, so
+copying into a running container and restarting has the shutdown save
+overwrite the file you just placed — then load it back, empty.
+
 \`\`\`bash
+docker stop $VALKEY_CONTAINER
 docker cp $BACKUP_DIR/valkey.rdb $VALKEY_CONTAINER:/data/dump.rdb
-docker restart $VALKEY_CONTAINER
+docker start $VALKEY_CONTAINER
 \`\`\`
 
 EOF
@@ -248,26 +253,15 @@ fi
 cat >> "$RESTORE_FILE" <<EOF
 ## Full restore (all at once)
 
-Stop services first (Ctrl+C on bin/dev.sh) then run:
+Prefer the script — it does everything above in the right order, creates any
+database that doesn't exist yet, and stops valkey before replacing its RDB:
 
 \`\`\`bash
-EOF
-
-for _db in techneos keycloak airflow; do
-  if [ -f "$BACKUP_DIR/$_db.dump" ]; then
-    echo "docker exec -i $POSTGRES_CONTAINER pg_restore -U $PG_USER -d $_db --clean --if-exists < $BACKUP_DIR/$_db.dump" >> "$RESTORE_FILE"
-  fi
-done
-if [ -d "$BACKUP_DIR/minio/techneos-data" ] && [ "$(ls -A "$BACKUP_DIR/minio/techneos-data" 2>/dev/null)" ]; then
-  echo "docker cp $BACKUP_DIR/minio/techneos-data/. $MINIO_CONTAINER:/data/techneos-data/" >> "$RESTORE_FILE"
-fi
-if [ -f "$BACKUP_DIR/valkey.rdb" ]; then
-  echo "docker cp $BACKUP_DIR/valkey.rdb $VALKEY_CONTAINER:/data/dump.rdb" >> "$RESTORE_FILE"
-fi
-
-cat >> "$RESTORE_FILE" <<'EOF'
-bin/dev.sh
-```
+make dev-stop
+make reset-data                    # optional; for a target identical to this backup
+make restore dir=$BACKUP_DIR
+make dev-all-portal
+\`\`\`
 EOF
 
 echo ""

@@ -119,6 +119,20 @@ worse than one that fails. `backups/` is gitignored: those dumps are real user
 data. Keycloak is in there because it owns the realms and SSO identities — the
 `techneos` database alone does not describe who can log in.
 
+`make restore dir=./backups/<timestamp>` ([`bin/restore.sh`](bin/restore.sh)) puts
+a backup back, restoring whatever it holds and skipping what it doesn't. It
+creates any target database that is missing — a fresh volume has only `techneos`,
+since keycloak and airflow are created by their own services' init — and restarts
+the services that own their schema afterwards. It refuses while the app services
+are up: `pg_restore --clean` drops each object before recreating it, and a live
+session blocks that, so it says so up front rather than failing halfway.
+
+**Valkey must be stopped before its RDB is replaced.** It writes memory to
+`dump.rdb` as it shuts down, so copying into a running container and restarting
+has the shutdown save overwrite the file you just placed — and then load it back,
+empty. The restore is silent and total: verified by planting a key, copying the
+RDB in, restarting, and finding zero keys. Stop, copy, start.
+
 `make reset-data` ([`bin/reset-data.sh`](bin/reset-data.sh)) empties the same set,
 dropping each database's schema rather than truncating so a restore lands on a
 target that is genuinely empty — `pg_restore --clean` replaces what a dump
