@@ -5,8 +5,8 @@ from typing import Any
 
 import typer
 
-from cli.client import ApiError, api_delete, api_get, api_post, require_auth
-from cli.output import print_detail, print_error, print_success, print_table
+from techneos_cli.client import ApiError, api_delete, api_get, api_post, require_auth
+from techneos_cli.output import print_detail, print_error, print_success, print_table
 
 task_run_app = typer.Typer(name="task-run", help="Task-run management.", no_args_is_help=True)
 
@@ -31,7 +31,7 @@ def list_task_runs(
             columns=["ID", "Tool", "Version", "Status", "Outcome", "Started"],
             rows=[
                 [
-                    t["id"][:12] + "…",
+                    t["id"],
                     t.get("tool_slug", "—"),
                     str(t.get("tool_version_num") or "—"),
                     t.get("status", "—"),
@@ -41,6 +41,7 @@ def list_task_runs(
                 for t in items
             ],
             title=f"Task runs ({data['total']} total)",
+            fold={"Tool"},
         )
     except ApiError as e:
         print_error(e.detail)

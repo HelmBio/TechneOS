@@ -132,8 +132,14 @@ no hard dependency on optional tool/agent content.
 Two client packages talk to the platform **only through the gateway REST API**,
 never the database directly:
 
-- `packages/cli` — the `techneos` end-user command (Typer/Rich). Run it with
-  `make dev-cli cmd="…"` or `uv run techneos …`.
+- `packages/cli` — the `techneos` end-user command (Typer/Rich), published as the
+  `techneos-cli` wheel. Run it with `make dev-cli cmd="…"` or `uv run techneos …`.
+  It's the one package customers install on their own machines, which constrains
+  it: it depends only on typer/httpx/rich — **never on `core`** or anything else
+  in this workspace — and reaches the platform solely over the gateway's REST
+  API. Its import package is `techneos_cli`, not `cli`: the wheel lands in a
+  customer's site-packages, where a generic top-level name would collide with
+  their own modules. The gateway serves the wheel (see "CLI distribution").
 - `packages/management` — the admin/registration toolkit, published as the
   `techneos-management` wheel. It holds the resource-removal scripts and the
   `management.registration` helpers (auth, environment/URL resolution, build +
@@ -143,6 +149,64 @@ never the database directly:
   externally-authored catalog packages both import `management.registration`, so
   its distribution name and import path are a stable contract — don't rename them
   casually.
+
+### CLI distribution
+
+Each deployment serves its own client wheel; nothing is published to PyPI. The
+gateway image builds `packages/cli` into `/app/cli-dist` and exposes it at
+`/cli/simple/` ([`gateway/routes/cli.py`](packages/gateway/src/gateway/routes/cli.py)),
+so the CLI a customer installs is the one built from the image they install it
+from. Locally, `make build-cli-wheel` fills the same directory (`cli_wheel_dir`,
+relative to the process CWD). The index re-reads that directory per request, so
+a rebuilt wheel needs no gateway restart.
+
+[`bin/build-cli-wheel.sh`](bin/build-cli-wheel.sh) stamps local builds with the
+commit they came from — `0.1.0+g1a2b3c4`, plus `.d<digest>` of the package's
+sources when it has uncommitted changes. That isn't cosmetic: **pip and uv key
+their caches on name + version**, so a rebuild carrying a version already
+installed is invisible to them. They report success and leave the copy they had,
+which reads as "my change did nothing". `pipx` compounds it — its `--force` is
+broken with the uv backend (it calls `uv venv` without `--clear`), and `uv cache
+clean` can block on the cache lock while the dev stack holds it. A distinct
+version per build sidesteps all of that.
+
+The digest is why it's a digest and not a `.dirty` flag: a flag is the same
+string on every rebuild, so it fails for exactly the loop the stamp exists for —
+editing without committing. Keying on content means the version changes when, and
+only when, the code does, so an unchanged rebuild is still a legitimate cache hit.
+
+The gateway image builds from `pyproject.toml` directly, so release wheels carry
+the plain version; each release is a version customers haven't installed before,
+which is why their caches were never the problem.
+
+Two constraints are easy to break:
+
+- **It is a PEP 503 index, not a download URL.** pip takes a wheel's filename
+  from the URL it is handed — it ignores `Content-Disposition` and won't re-read
+  the name after a redirect — so a `/cli/download` endpoint cannot yield a
+  version-free install command. An index can.
+- **Unknown projects redirect to PyPI**, which is what lets the index be a
+  client's only `--index-url`. Don't "simplify" that away and tell users to add
+  PyPI as an `--extra-index-url`: pip merges indexes and takes the highest
+  version across all of them, so anyone registering the unclaimed `techneos-cli`
+  name on PyPI could outrank the wheel we serve.
+
+`/cli/` is unauthenticated (`PUBLIC_PREFIXES`) — a customer installs the client
+before they have any credentials. Downloads are restricted to the wheels the
+index itself enumerates, so a crafted filename can't reach other files. The
+schema's security is cleared for those prefixes too, so the lock icons in
+`/docs` keep matching what the middleware actually enforces.
+
+Only `GET /cli/version` is in the OpenAPI schema. The index pages and the wheel
+are `include_in_schema=False`: they serve HTML and binaries to a package
+installer, so a "Try it out" button on them is noise.
+
+Skew is advisory: the CLI sends `X-Client-Version` on every request and the
+gateway answers with `X-Client-Version-Warning` when the versions are
+incompatible ([`gateway/client_version.py`](packages/gateway/src/gateway/client_version.py)).
+The rule is semver-aware — before 1.0 a minor bump breaks, after it only a major
+one does. `PLATFORM_VERSION` there is what clients are compared against; keep it
+in step with the gateway package version.
 
 ## Platform setup (`setup/`) & the catalog contract
 

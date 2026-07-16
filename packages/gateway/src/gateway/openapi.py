@@ -267,14 +267,16 @@ def build_gateway_openapi(app: FastAPI) -> dict[str, Any]:
 
     # Advertise the gateway's auth so "Try it out" can send a token. Applied
     # globally, then cleared on the endpoints the gateway leaves unauthenticated
-    # (health/docs and the auth handlers) so their lock icons stay accurate.
-    from gateway.middleware.auth import AUTH_PATHS, PUBLIC_PATHS
+    # (health/docs, the auth handlers, and client distribution) so their lock
+    # icons stay accurate. Mirrors the middleware's own test, prefixes included —
+    # matching only the exact paths would leave a lock on endpoints that take no
+    # token, which is the misdirection the lock icon exists to prevent.
+    from gateway.middleware.auth import AUTH_PATHS, PUBLIC_PATHS, PUBLIC_PREFIXES
 
     components.setdefault("securitySchemes", {}).update(_SECURITY_SCHEMES)
     schema["security"] = [{"HTTPBearer": []}]
-    for path in PUBLIC_PATHS | AUTH_PATHS:
-        item = paths.get(path)
-        if not item:
+    for path, item in paths.items():
+        if not (path in PUBLIC_PATHS or path in AUTH_PATHS or path.startswith(PUBLIC_PREFIXES)):
             continue
         for method, operation in item.items():
             if method.lower() in _HTTP_METHODS and isinstance(operation, dict):

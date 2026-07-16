@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"  # comma-separated allowed origins
+    # Directory the gateway serves the techneos-cli wheel from, resolved against
+    # the process CWD — the app root both in the container and a source checkout.
+    cli_wheel_dir: str = "cli-dist"
     secrets_encryption_key: str = (
         ""  # Fernet key for encrypting secrets at rest (API keys, bucket credentials)
     )

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import httpx
 import typer
 
-from cli.client import ApiError, api_get, api_post
-from cli.config import clear_tokens, get_base_url, save_tokens, set_base_url
-from cli.output import print_detail, print_error, print_success
+from techneos_cli.client import ApiError, api_get, api_post
+from techneos_cli.config import clear_tokens, get_base_url, save_tokens, set_base_url
+from techneos_cli.output import print_detail, print_error, print_success
 
 auth_app = typer.Typer(name="auth", help="Authentication commands.", no_args_is_help=True)
 
@@ -15,27 +16,34 @@ auth_app = typer.Typer(name="auth", help="Authentication commands.", no_args_is_
 def login(
     email: str = typer.Option(..., prompt=True, help="Account email"),
     password: str = typer.Option(..., prompt=True, hide_input=True, help="Password"),
-    url: str = typer.Option("", help="Platform URL (saves to config)"),
+    url: str = typer.Option("", help="Platform URL (saved once the login succeeds)"),
 ) -> None:
     """Log in with email + password and store access + refresh tokens."""
-    if url:
-        set_base_url(url)
+    target = url or get_base_url()
 
     try:
         data = api_post(
             "/api/v1/auth/login",
-            json={"email": email, "password": password, "auth_method": "local"},
+            json={"email": email, "password": password},
+            base_url=target,
         )
-        save_tokens(data["access_token"], data["refresh_token"])
-        print_success(f"Logged in as {email}")
     except ApiError as e:
         print_error(e.detail)
         raise typer.Exit(1) from None
+    except httpx.HTTPError as e:
+        print_error(f"Cannot reach {target}: {e}")
+        raise typer.Exit(1) from None
+
+    # Only now commit the URL: a typo shouldn't silently repoint a working CLI.
+    if url:
+        set_base_url(url)
+    save_tokens(data["access_token"], data["refresh_token"])
+    print_success(f"Logged in as {email}")
 
 
 @auth_app.command("login-sso")
 def login_sso(
-    url: str = typer.Option("", help="Platform URL (saves to config)"),
+    url: str = typer.Option("", help="Platform URL (saved once the login succeeds)"),
     port: int = typer.Option(8085, help="Local callback server port"),
 ) -> None:
     """Log in via SSO (PKCE flow).
@@ -45,9 +53,6 @@ def login_sso(
     temporary local server which captures the authorization code and
     exchanges it for tokens.
     """
-    if url:
-        set_base_url(url)
-
     import hashlib
     import http.server
     import secrets
@@ -57,7 +62,8 @@ def login_sso(
 
     import httpx
 
-    base_url = get_base_url()
+    # Not committed to the config until the token exchange below succeeds.
+    base_url = url.rstrip("/") if url else get_base_url()
 
     # 1. Fetch auth discovery config from the platform
     try:
@@ -186,7 +192,10 @@ def login_sso(
                 "code_verifier": code_verifier,
                 "provider": provider_name,
             },
+            base_url=base_url,
         )
+        if url:
+            set_base_url(url)
         save_tokens(data["access_token"], data["refresh_token"])
         print_success("Logged in via SSO")
     except ApiError as e:
@@ -197,7 +206,7 @@ def login_sso(
 @auth_app.command()
 def logout() -> None:
     """Clear stored tokens and revoke the Keycloak session if applicable."""
-    from cli.config import load_tokens
+    from techneos_cli.config import load_tokens
 
     tokens = load_tokens()
 
@@ -218,7 +227,7 @@ def logout() -> None:
 @auth_app.command()
 def whoami() -> None:
     """Show the current user profile."""
-    from cli.client import require_auth
+    from techneos_cli.client import require_auth
 
     require_auth()
     try:
@@ -242,7 +251,7 @@ def whoami() -> None:
 @auth_app.command()
 def status() -> None:
     """Show login status and platform URL."""
-    from cli.config import load_tokens
+    from techneos_cli.config import load_tokens
 
     url = get_base_url()
     tokens = load_tokens()

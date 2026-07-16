@@ -74,7 +74,7 @@ make dev-all-portal    # run every backend service + the web portal (localhost:3
 
 Or run pieces individually: `make dev-gateway` (API gateway, `:8000`),
 `make dev-auth` / `dev-dataset` / … for the other services, `make dev-portal`
-for just the web portal, and `make dev-cli cmd="datasets list"` for the CLI.
+for just the web portal, and `make dev-cli cmd="dataset list"` for the CLI.
 `make dev-all` / `make dev-stop` start/stop the whole backend via
 [`bin/dev.sh`](bin/dev.sh). Run `make help` to see every target.
 
@@ -83,6 +83,37 @@ After `make seed`, log in with the seeded admin account (`admin@example.com` /
 or register a new one from the login page. To enable Google/GitHub sign-in,
 see the "Authentication (Keycloak SSO)" section in [`AGENTS.md`](AGENTS.md) —
 it takes a Keycloak config in `.env` plus your own OAuth app credentials.
+
+## Installing the CLI
+
+Each deployment serves its own `techneos-cli` wheel, so users install the client
+from the platform they use rather than from a public index:
+
+```bash
+pipx install --index-url https://<platform-host>/cli/simple/ techneos-cli
+techneos config set-url https://<platform-host>   # or pass --url to `auth login`
+techneos auth login
+```
+
+`techneos config show` reports which platform the CLI points at and whether
+you're logged in; the settings live in `~/.techneos/config.json`.
+
+`/cli/simple/` is a [PEP 503](https://peps.python.org/pep-0503/) index and needs
+no authentication — a user has to install the client before they can log in. It
+serves `techneos-cli` itself and forwards everything else to PyPI, so it works as
+the client's only `--index-url`. `GET /cli/version` reports the version on offer.
+
+Because the wheel ships inside the gateway image, a fresh install always matches
+the platform it came from. If a platform is later upgraded under an existing
+client, the client sends its version on every request and the gateway answers
+with a warning naming the exact reinstall command. Compatibility follows semver:
+before 1.0 a minor bump is treated as breaking, after it only a major bump is.
+
+Locally, `make build-cli-wheel` produces the wheel the gateway serves; without it
+`/cli/simple/` returns a 404 saying so. Local builds are stamped with the commit
+they came from (`0.1.0+g1a2b3c4`), so each one is a version pip and uv haven't
+cached and a plain `pip install --upgrade` picks up your rebuild. Release wheels,
+built by the gateway image, carry the plain version.
 
 ## Testing
 

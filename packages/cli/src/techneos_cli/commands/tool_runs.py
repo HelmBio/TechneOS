@@ -10,7 +10,7 @@ from typing import Any, cast
 import httpx
 import typer
 
-from cli.client import (
+from techneos_cli.client import (
     ApiError,
     _auth_headers,
     _handle_response,
@@ -18,8 +18,8 @@ from cli.client import (
     api_post,
     require_auth,
 )
-from cli.config import get_base_url
-from cli.output import print_detail, print_error, print_success, print_table
+from techneos_cli.config import get_base_url
+from techneos_cli.output import print_detail, print_error, print_success, print_table
 
 tool_run_app = typer.Typer(
     name="tool-run",
@@ -138,11 +138,12 @@ def list_tool_runs(
             typer.echo("No tool runs found.")
             return
         print_table(
-            columns=["ID", "Tool", "Status", "Submitted", "Started", "Finished"],
+            columns=["ID", "Tool", "Version", "Status", "Submitted", "Started", "Finished"],
             rows=[
                 [
-                    r["id"][:12] + "…",
-                    r.get("tool_name") or (r.get("tool_id", "")[:12] + "…"),
+                    r["id"],
+                    r.get("tool_slug") or r.get("tool_id") or "—",
+                    str(r.get("tool_version_num") or "—"),
                     r["status"],
                     r["created_at"][:19],
                     (r.get("started_at") or "—")[:19],
@@ -151,6 +152,7 @@ def list_tool_runs(
                 for r in items
             ],
             title=f"Tool Runs ({data['total']} total)",
+            fold={"Tool"},
         )
     except ApiError as e:
         print_error(e.detail)
@@ -183,14 +185,7 @@ def get_tool_run(run_id: str = typer.Argument(..., help="Tool run ID")) -> None:
 
     if artifacts:
         typer.echo("")
-        print_table(
-            columns=["Name", "Type", "Size", "ID"],
-            rows=[
-                [a["name"], a["artifact_type"], str(a.get("file_size", "—")), a["id"][:12] + "…"]
-                for a in artifacts
-            ],
-            title="Artifacts",
-        )
+        _print_artifact_table(artifacts)
 
 
 @tool_run_app.command("cancel")
@@ -314,15 +309,19 @@ def _wait_until_terminal(run_id: str, interval: float = 3.0, timeout: float = 36
     raise typer.Exit(2)
 
 
+def _print_artifact_table(artifacts: list[dict[str, Any]]) -> None:
+    """Render a run's artifacts. Fields match ToolRunArtifactResponse."""
+    print_table(
+        columns=["File", "Type", "Size", "ID"],
+        rows=[
+            [a["file_name"], a["io_type"], str(a["file_size"]), a["id"]] for a in artifacts
+        ],
+        title="Artifacts",
+    )
+
+
 def _print_artifacts(detail: dict[str, Any]) -> None:
     artifacts = detail.get("artifacts") or []
     if not artifacts:
         return
-    print_table(
-        columns=["Name", "Type", "Size", "ID"],
-        rows=[
-            [a["name"], a["artifact_type"], str(a.get("file_size", "—")), a["id"][:12] + "…"]
-            for a in artifacts
-        ],
-        title="Artifacts",
-    )
+    _print_artifact_table(artifacts)

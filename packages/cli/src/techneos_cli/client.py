@@ -8,9 +8,14 @@ from typing import Any
 import httpx
 import typer
 
-from cli.config import get_base_url, load_tokens, save_tokens
+from techneos_cli.config import get_base_url, load_tokens, save_tokens
 
 logger = logging.getLogger(__name__)
+
+# Set by the gateway when this client's version is incompatible with the platform's.
+SKEW_WARNING_HEADER = "X-Client-Version-Warning"
+
+_skew_warned = False
 
 
 class ApiError(Exception):
@@ -28,6 +33,27 @@ def _auth_headers() -> dict[str, str]:
     if tokens and tokens.get("access_token"):
         return {"Authorization": f"Bearer {tokens['access_token']}"}
     return {}
+
+
+def _version_headers() -> dict[str, str]:
+    """Identify this client's version so the gateway can flag version skew."""
+    from techneos_cli import __version__
+
+    return {
+        "X-Client-Version": __version__,
+        "User-Agent": f"techneos-cli/{__version__}",
+    }
+
+
+def _warn_on_skew(resp: httpx.Response) -> None:
+    """Surface the gateway's version-skew warning, at most once per process."""
+    global _skew_warned
+    if _skew_warned:
+        return
+    warning = resp.headers.get(SKEW_WARNING_HEADER)
+    if warning:
+        _skew_warned = True
+        typer.secho(f"warning: {warning}", fg="yellow", err=True)
 
 
 def _try_refresh() -> bool:
@@ -58,6 +84,10 @@ def _try_refresh() -> bool:
 
 def _handle_response(resp: httpx.Response) -> httpx.Response:
     """Check response status and raise ApiError on failure."""
+    # Before the status checks below: a skew warning is most useful precisely
+    # when the mismatch is what caused the error we're about to raise on.
+    _warn_on_skew(resp)
+
     if resp.status_code == 401:
         raise ApiError(401, "Unauthorized — run `techneos auth login` first")
     if resp.status_code == 403:
@@ -92,7 +122,7 @@ def get_client(base_url: str | None = None, timeout: float = 30.0) -> httpx.Clie
     url = base_url or get_base_url()
     return httpx.Client(
         base_url=url,
-        headers=_auth_headers(),
+        headers={**_auth_headers(), **_version_headers()},
         timeout=timeout,
     )
 
@@ -105,13 +135,17 @@ def _request_with_retry(
     params: dict[str, Any] | None = None,
     files: Any | None = None,
     timeout: float = 30.0,
+    base_url: str | None = None,
 ) -> httpx.Response:
     """Execute an HTTP request with automatic 401 → refresh → retry.
 
     If the first request returns 401 and a refresh token is available,
     attempts to refresh the access token and retries exactly once.
+
+    ``base_url`` overrides the saved platform URL for this one call, so a
+    caller can try a URL out before committing it to the config.
     """
-    with get_client(timeout=timeout) as c:
+    with get_client(base_url=base_url, timeout=timeout) as c:
         kwargs: dict[str, Any] = {}
         if json is not None:
             kwargs["json"] = json
@@ -137,9 +171,9 @@ def api_get(path: str, params: dict[str, Any] | None = None) -> Any:
     return resp.json() if resp.text else None
 
 
-def api_post(path: str, json: dict[str, Any] | None = None) -> Any:
+def api_post(path: str, json: dict[str, Any] | None = None, base_url: str | None = None) -> Any:
     """POST request to the platform API. Returns parsed JSON."""
-    resp = _handle_response(_request_with_retry("POST", path, json=json))
+    resp = _handle_response(_request_with_retry("POST", path, json=json, base_url=base_url))
     return resp.json() if resp.text else None
 
 

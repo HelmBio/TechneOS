@@ -25,6 +25,11 @@ PUBLIC_PATHS = {
     "/openapi.json",
 }
 
+# Prefixes that don't require authentication. Separate from the exact matches
+# above because these serve versioned filenames. /cli/ distributes the client
+# wheel, which a customer necessarily fetches before they can authenticate.
+PUBLIC_PREFIXES = ("/cli/",)
+
 # Auth paths that handle their own authentication
 AUTH_PATHS = {
     "/api/v1/auth/login",
@@ -46,7 +51,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for public and auth-specific paths
-        if request.url.path in PUBLIC_PATHS or request.url.path in AUTH_PATHS:
+        if (
+            request.url.path in PUBLIC_PATHS
+            or request.url.path in AUTH_PATHS
+            or request.url.path.startswith(PUBLIC_PREFIXES)
+        ):
             return await call_next(request)
 
         # Skip auth for OPTIONS (CORS preflight)

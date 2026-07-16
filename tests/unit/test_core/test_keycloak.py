@@ -571,15 +571,14 @@ class TestKeycloakAdminClient:
 class TestCLILoginSSO:
     """Test the CLI login-sso command with mocked browser and server."""
 
-    @patch("cli.commands.auth.api_post")
-    @patch("cli.commands.auth.save_tokens")
+    @patch("techneos_cli.commands.auth.api_post")
+    @patch("techneos_cli.commands.auth.save_tokens")
     @patch("webbrowser.open")
     @patch("httpx.get")
     def test_login_sso_success(self, mock_httpx_get, mock_browser, mock_save, mock_post):
         """Test successful SSO login flow."""
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
 
@@ -624,9 +623,8 @@ class TestCLILoginSSO:
     @patch("httpx.get")
     def test_login_sso_disabled(self, mock_httpx_get):
         """Test SSO login when no SSO provider is configured."""
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
 
@@ -643,9 +641,8 @@ class TestCLILoginSSO:
     @patch("httpx.get", side_effect=Exception("Connection refused"))
     def test_login_sso_unreachable(self, mock_httpx_get):
         """Test SSO login when platform is unreachable."""
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
 
@@ -662,21 +659,21 @@ class TestCLITokenRefresh:
 
     def test_try_refresh_no_tokens(self):
         """Test refresh returns False when no tokens stored."""
-        with patch("cli.client.load_tokens", return_value=None):
-            from cli.client import _try_refresh
+        with patch("techneos_cli.client.load_tokens", return_value=None):
+            from techneos_cli.client import _try_refresh
 
             assert _try_refresh() is False
 
     def test_try_refresh_no_refresh_token(self):
         """Test refresh returns False when no refresh token."""
-        with patch("cli.client.load_tokens", return_value={"access_token": "tok"}):
-            from cli.client import _try_refresh
+        with patch("techneos_cli.client.load_tokens", return_value={"access_token": "tok"}):
+            from techneos_cli.client import _try_refresh
 
             assert _try_refresh() is False
 
-    @patch("cli.client.save_tokens")
-    @patch("cli.client.get_base_url", return_value="http://test:8000")
-    @patch("cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
+    @patch("techneos_cli.client.save_tokens")
+    @patch("techneos_cli.client.get_base_url", return_value="http://test:8000")
+    @patch("techneos_cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
     @patch("httpx.post")
     def test_try_refresh_success(self, mock_post, mock_tokens, mock_url, mock_save):
         """Test successful token refresh."""
@@ -688,13 +685,13 @@ class TestCLITokenRefresh:
         }
         mock_post.return_value = mock_resp
 
-        from cli.client import _try_refresh
+        from techneos_cli.client import _try_refresh
 
         assert _try_refresh() is True
         mock_save.assert_called_once_with("new-access", "new-refresh")
 
-    @patch("cli.client.get_base_url", return_value="http://test:8000")
-    @patch("cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
+    @patch("techneos_cli.client.get_base_url", return_value="http://test:8000")
+    @patch("techneos_cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
     @patch("httpx.post")
     def test_try_refresh_failure(self, mock_post, mock_tokens, mock_url):
         """Test refresh returns False on server error."""
@@ -702,16 +699,16 @@ class TestCLITokenRefresh:
         mock_resp.status_code = 400
         mock_post.return_value = mock_resp
 
-        from cli.client import _try_refresh
+        from techneos_cli.client import _try_refresh
 
         assert _try_refresh() is False
 
-    @patch("cli.client.get_base_url", return_value="http://test:8000")
-    @patch("cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
+    @patch("techneos_cli.client.get_base_url", return_value="http://test:8000")
+    @patch("techneos_cli.client.load_tokens", return_value={"access_token": "old", "refresh_token": "ref"})
     @patch("httpx.post", side_effect=Exception("Connection refused"))
     def test_try_refresh_exception(self, mock_post, mock_tokens, mock_url):
         """Test refresh returns False on network error."""
-        from cli.client import _try_refresh
+        from techneos_cli.client import _try_refresh
 
         assert _try_refresh() is False
 
@@ -722,13 +719,12 @@ class TestCLITokenRefresh:
 class TestCLILogoutRevocation:
     """Test that CLI logout attempts to revoke the server-side session."""
 
-    @patch("cli.commands.auth.api_post")
-    @patch("cli.commands.auth.clear_tokens")
-    @patch("cli.config.load_tokens", return_value={"access_token": "tok", "refresh_token": "ref"})
+    @patch("techneos_cli.commands.auth.api_post")
+    @patch("techneos_cli.commands.auth.clear_tokens")
+    @patch("techneos_cli.config.load_tokens", return_value={"access_token": "tok", "refresh_token": "ref"})
     def test_logout_revokes(self, mock_tokens, mock_clear, mock_post):
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
         result = runner.invoke(app, ["auth", "logout"])
@@ -742,14 +738,13 @@ class TestCLILogoutRevocation:
         )
         mock_clear.assert_called_once()
 
-    @patch("cli.commands.auth.api_post", side_effect=Exception("network error"))
-    @patch("cli.commands.auth.clear_tokens")
-    @patch("cli.config.load_tokens", return_value={"access_token": "tok", "refresh_token": "ref"})
+    @patch("techneos_cli.commands.auth.api_post", side_effect=Exception("network error"))
+    @patch("techneos_cli.commands.auth.clear_tokens")
+    @patch("techneos_cli.config.load_tokens", return_value={"access_token": "tok", "refresh_token": "ref"})
     def test_logout_revoke_failure_still_clears(self, mock_tokens, mock_clear, mock_post):
         """Test that logout clears tokens even if server revocation fails."""
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
         result = runner.invoke(app, ["auth", "logout"])
@@ -757,14 +752,13 @@ class TestCLILogoutRevocation:
         assert "Logged out" in result.output
         mock_clear.assert_called_once()
 
-    @patch("cli.commands.auth.api_post")
-    @patch("cli.commands.auth.clear_tokens")
-    @patch("cli.config.load_tokens", return_value=None)
+    @patch("techneos_cli.commands.auth.api_post")
+    @patch("techneos_cli.commands.auth.clear_tokens")
+    @patch("techneos_cli.config.load_tokens", return_value=None)
     def test_logout_no_tokens(self, mock_tokens, mock_clear, mock_post):
         """Test logout when not logged in — should not call server."""
+        from techneos_cli import app
         from typer.testing import CliRunner
-
-        from cli import app
 
         runner = CliRunner()
         result = runner.invoke(app, ["auth", "logout"])

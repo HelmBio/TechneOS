@@ -149,8 +149,11 @@ dev-task: ## Run task service in dev mode
 
 # --- CLI ---
 
-dev-cli: ## Run the CLI (usage: make dev-cli cmd="datasets list")
-	uv run python -m cli.main $(cmd)
+dev-cli: ## Run the CLI (usage: make dev-cli cmd="dataset list")
+	uv run python -m techneos_cli.main $(cmd)
+
+build-cli-wheel: ## Build the techneos-cli wheel the gateway serves at /cli/simple/
+	bin/build-cli-wheel.sh
 
 # --- Web portal ---
 

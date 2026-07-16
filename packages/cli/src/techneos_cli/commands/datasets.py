@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import typer
 
-from cli.client import (
+from techneos_cli.client import (
     ApiError,
     api_delete,
     api_download,
@@ -15,7 +15,7 @@ from cli.client import (
     api_upload,
     require_auth,
 )
-from cli.output import print_detail, print_error, print_json, print_success, print_table
+from techneos_cli.output import print_detail, print_error, print_json, print_success, print_table
 
 dataset_app = typer.Typer(name="dataset", help="Dataset management.", no_args_is_help=True)
 
@@ -41,10 +41,11 @@ def list_datasets(
             typer.echo("No datasets found.")
             return
         print_table(
-            columns=["ID", "Name", "Type", "Public", "Created"],
+            columns=["ID", "Slug", "Name", "Type", "Public", "Created"],
             rows=[
                 [
-                    d["id"][:12] + "…",
+                    d["id"],
+                    d.get("slug", "—"),
                     d["name"],
                     d.get("data_type", "—"),
                     "yes" if d.get("is_public") else "no",

@@ -7,8 +7,8 @@ from typing import Any
 
 import typer
 
-from cli.client import ApiError, api_delete, api_get, api_post, require_auth
-from cli.output import print_detail, print_error, print_success, print_table
+from techneos_cli.client import ApiError, api_delete, api_get, api_post, require_auth
+from techneos_cli.output import print_detail, print_error, print_success, print_table
 
 pipeline_app = typer.Typer(name="pipeline", help="Pipeline management.", no_args_is_help=True)
 
@@ -31,10 +31,11 @@ def list_pipelines(
             typer.echo("No pipelines found.")
             return
         print_table(
-            columns=["ID", "Name", "Version", "Steps", "Public", "Created"],
+            columns=["ID", "Slug", "Name", "Version", "Steps", "Public", "Created"],
             rows=[
                 [
-                    p["id"][:12] + "…",
+                    p["id"],
+                    p.get("slug", "—"),
                     p["name"],
                     str(p.get("version", "—")),
                     str(len(p.get("steps", []))),
@@ -136,7 +137,9 @@ def submit_run(
 
 @run_app.command("list")
 def list_runs(
-    pipeline_id: str = typer.Option("", "--pipeline", "-p", help="Filter by pipeline ID"),
+    pipeline_id: str = typer.Option(
+        "", "--pipeline", "-p", help="Filter by pipeline ID or slug"
+    ),
     run_status: str = typer.Option("", "--status", "-s", help="Filter by status"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
 ) -> None:
@@ -155,11 +158,12 @@ def list_runs(
             typer.echo("No runs found.")
             return
         print_table(
-            columns=["ID", "Pipeline", "Status", "Submitted", "Started", "Finished"],
+            columns=["ID", "Pipeline", "Version", "Status", "Submitted", "Started", "Finished"],
             rows=[
                 [
-                    r["id"][:12] + "…",
-                    r["pipeline_id"][:12] + "…",
+                    r["id"],
+                    r.get("pipeline_slug") or r.get("pipeline_id") or "—",
+                    str(r.get("pipeline_version") or "—"),
                     r["status"],
                     r["created_at"][:19],
                     (r.get("started_at") or "—")[:19],
@@ -168,6 +172,7 @@ def list_runs(
                 for r in items
             ],
             title=f"Runs ({data['total']} total)",
+            fold={"Pipeline"},
         )
     except ApiError as e:
         print_error(e.detail)
@@ -206,7 +211,7 @@ def get_run(run_id: str = typer.Argument(..., help="Run ID")) -> None:
                 columns=["ID", "Name", "Type", "File", "Size"],
                 rows=[
                     [
-                        a["id"][:12] + "…",
+                        a["id"],
                         a["name"],
                         a.get("artifact_type", "—"),
                         a.get("file_name", "—"),

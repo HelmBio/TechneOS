@@ -18,12 +18,27 @@ def ensure_config_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def get_saved_base_url() -> str | None:
+    """The platform URL explicitly saved to config, or None if never set.
+
+    `get_base_url` can't tell a saved value from the fallback, which is the
+    one distinction someone asking where their CLI points actually needs.
+    """
+    if not CONFIG_FILE.exists():
+        return None
+    try:
+        data = json.loads(CONFIG_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        # A corrupt config shouldn't take every command down with it; the
+        # default below still works, and `config show` reports the fallback.
+        return None
+    url = data.get("base_url")
+    return str(url) if url else None
+
+
 def get_base_url() -> str:
     """Read the platform base URL from config, or return the default."""
-    if CONFIG_FILE.exists():
-        data = json.loads(CONFIG_FILE.read_text())
-        return cast(str, data.get("base_url", DEFAULT_BASE_URL))
-    return DEFAULT_BASE_URL
+    return get_saved_base_url() or DEFAULT_BASE_URL
 
 
 def set_base_url(url: str) -> None:

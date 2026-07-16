@@ -5,8 +5,8 @@ from typing import Any
 
 import typer
 
-from cli.client import ApiError, api_delete, api_get, api_post, require_auth
-from cli.output import print_detail, print_error, print_success, print_table
+from techneos_cli.client import ApiError, api_delete, api_get, api_post, require_auth
+from techneos_cli.output import print_detail, print_error, print_success, print_table
 
 app_app = typer.Typer(name="app", help="App management.", no_args_is_help=True)
 
@@ -28,10 +28,11 @@ def list_apps(
             typer.echo("No apps found.")
             return
         print_table(
-            columns=["ID", "Name", "Category", "Launch Mode", "Status", "Created"],
+            columns=["ID", "Slug", "Name", "Category", "Launch Mode", "Status", "Created"],
             rows=[
                 [
-                    a["id"][:12] + "…",
+                    a["id"],
+                    a.get("slug", "—"),
                     a["name"],
                     a.get("category", "—"),
                     a.get("launch_mode", "—"),

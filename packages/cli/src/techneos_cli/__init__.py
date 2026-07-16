@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
 import typer
 
-from cli.commands.agents import agent_app
-from cli.commands.apps import app_app
-from cli.commands.auth import auth_app
-from cli.commands.datasets import dataset_app
-from cli.commands.pipelines import pipeline_app, run_app
-from cli.commands.task_runs import task_run_app
-from cli.commands.tool_runs import tool_run_app
-from cli.commands.tools import tool_app
+from techneos_cli.commands.agents import agent_app
+from techneos_cli.commands.apps import app_app
+from techneos_cli.commands.auth import auth_app
+from techneos_cli.commands.config import config_app
+from techneos_cli.commands.datasets import dataset_app
+from techneos_cli.commands.pipelines import pipeline_app, run_app
+from techneos_cli.commands.task_runs import task_run_app
+from techneos_cli.commands.tool_runs import tool_run_app
+from techneos_cli.commands.tools import tool_app
+
+try:
+    __version__ = _pkg_version("techneos-cli")
+except PackageNotFoundError:  # running from a source tree that was never installed
+    __version__ = "0.0.0+unknown"
 
 app = typer.Typer(
     name="techneos",
@@ -20,6 +29,7 @@ app = typer.Typer(
 )
 
 # Register command groups
+app.add_typer(config_app)
 app.add_typer(auth_app)
 app.add_typer(dataset_app)
 app.add_typer(tool_app)
@@ -37,7 +47,7 @@ def main(
 ) -> None:
     """TechneOS CLI — manage datasets, tools, pipelines, and runs."""
     if json_output:
-        from cli.output import set_json_mode
+        from techneos_cli.output import set_json_mode
 
         set_json_mode(True)
 
@@ -45,7 +55,7 @@ def main(
 @app.command()
 def version() -> None:
     """Show the CLI version."""
-    typer.echo("techneos-cli v0.1.0")
+    typer.echo(f"techneos-cli v{__version__}")
 
 
 @app.command()
@@ -53,7 +63,7 @@ def health(url: str = typer.Option("", help="Platform URL (uses saved config if 
     """Check platform health."""
     import httpx
 
-    from cli.config import get_base_url
+    from techneos_cli.config import get_base_url
 
     target = url or get_base_url()
     try:

@@ -5,8 +5,8 @@ from typing import Any
 
 import typer
 
-from cli.client import ApiError, api_delete, api_get, api_post, require_auth
-from cli.output import print_detail, print_error, print_success, print_table
+from techneos_cli.client import ApiError, api_delete, api_get, api_post, require_auth
+from techneos_cli.output import print_detail, print_error, print_success, print_table
 
 tool_app = typer.Typer(name="tool", help="Tool management.", no_args_is_help=True)
 
@@ -32,10 +32,11 @@ def list_tools(
             typer.echo("No tools found.")
             return
         print_table(
-            columns=["ID", "Name", "Category", "Public", "Created"],
+            columns=["ID", "Slug", "Name", "Category", "Public", "Created"],
             rows=[
                 [
-                    t["id"][:12] + "…",
+                    t["id"],
+                    t.get("slug", "—"),
                     t["name"],
                     t.get("category", "—"),
                     "yes" if t.get("is_public") else "no",

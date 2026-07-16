@@ -1,6 +1,6 @@
 """CLI main entry point."""
 
-from cli import app
+from techneos_cli import app
 
 if __name__ == "__main__":
     app()
