@@ -144,9 +144,6 @@ class TokenPayload(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    auth_method: str | None = (
-        None  # "local" to force local DB auth, None to use configured provider
-    )
 
 
 class ChangePasswordRequest(BaseModel):

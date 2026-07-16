@@ -18,7 +18,6 @@ from core.database.postgres import get_async_session
 from core.models.common import PaginatedResponse, TokenPayload
 from core.models.pipeline import PipelineRun
 from core.pipeline_topology import merge, schema_defaults
-from core.utils import is_uuid
 from core.schemas.pipeline import (
     PipelineArtifactCreate,
     PipelineArtifactDownloadResponse,
@@ -33,6 +32,7 @@ from core.schemas.pipeline import (
     StepRunResponse,
     StepStatusUpdate,
 )
+from core.utils import is_uuid
 from pipeline_service.crud.pipelines import get_pipeline, get_pipeline_by_slug
 from pipeline_service.crud.runs import (
     create_artifact,
@@ -234,11 +234,12 @@ async def submit_run(
     if is_uuid(data.pipeline_id):
         pipeline = await get_pipeline(session, data.pipeline_id)
     else:
-        pipeline = await get_pipeline_by_slug(session, data.pipeline_id)
-        if pipeline is None:
+        by_slug = await get_pipeline_by_slug(session, data.pipeline_id)
+        if by_slug is None:
             raise HTTPException(
                 status_code=404, detail=f"Pipeline '{data.pipeline_id}' not found"
             )
+        pipeline = by_slug
     check_resource_access(current_user, pipeline, resource_name="pipeline")
 
     # Resolve the version to run against
@@ -514,8 +515,7 @@ async def delete_run_endpoint(
 ) -> None:
     """Hard-delete a pipeline run.
 
-    Requires ``platform_admin`` role.  Cascades to step runs and artifacts.
-    Used by admin resource-cleanup scripts.
+    Cascades to step runs and artifacts. Used by admin resource-cleanup scripts.
     """
     await delete_run(session, run_id)
 

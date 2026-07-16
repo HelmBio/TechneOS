@@ -205,7 +205,6 @@ async def admin_create_user(
 ) -> User:
     """Create a new local user account.
 
-    Requires ``platform_admin`` or ``org_admin`` role.
     ``org_admin`` callers are scoped to their own organization — the
     user is created in the caller's org and the ``org_id`` field in
     the payload is ignored.

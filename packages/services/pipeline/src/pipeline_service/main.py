@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from core.auth.openapi import install_permission_annotations
 from core.config import get_settings
 from core.database.postgres import dispose_engine
 from core.exceptions import (
@@ -17,6 +18,7 @@ from core.exceptions import (
     PlatformError,
     ValidationError,
 )
+from core.openapi import short_operation_id
 from pipeline_service.routes import monitoring, pipelines, runs, versions
 
 
@@ -31,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
+    generate_unique_id_function=short_operation_id,
     title="TechneOS — Pipeline Service",
     description="Define, submit, and track computational pipelines",
     version="0.1.0",
@@ -98,3 +101,6 @@ app.include_router(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy", "service": "pipeline"}
+
+# Document per-endpoint RBAC permissions in the OpenAPI schema.
+install_permission_annotations(app)

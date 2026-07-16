@@ -18,6 +18,7 @@ from sqlalchemy import select  # noqa: E402
 from agent_service.routes import agents, assistant, conversations, runs  # noqa: E402
 from core.agent.registry import load_providers_from_db  # noqa: E402
 from core.agent.tool_registry import get_tool_registry  # noqa: E402
+from core.auth.openapi import install_permission_annotations  # noqa: E402
 from core.config import get_settings  # noqa: E402
 from core.database.postgres import dispose_engine, get_async_session_context  # noqa: E402
 from core.exceptions import (  # noqa: E402
@@ -30,6 +31,7 @@ from core.exceptions import (  # noqa: E402
 )
 from core.models.agent import AgentDefinition  # noqa: E402
 from core.models.tool import PypiConfig, ToolVersion  # noqa: E402
+from core.openapi import short_operation_id  # noqa: E402
 
 
 async def _install_registered_agent_packages() -> list[str]:
@@ -276,6 +278,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
+    generate_unique_id_function=short_operation_id,
     title="TechneOS — Agent Service",
     description="Define, execute, and track AI agent runs",
     version="0.1.0",
@@ -332,3 +335,6 @@ app.include_router(conversations.router, prefix=f"{prefix}/agentic-runs", tags=[
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy", "service": "agent"}
+
+# Document per-endpoint RBAC permissions in the OpenAPI schema.
+install_permission_annotations(app)

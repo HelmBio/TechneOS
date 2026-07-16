@@ -37,10 +37,7 @@ async def bulk_delete_storage_files(
     request: BulkDeleteRequest,
     _admin: TokenPayload = Depends(get_current_superuser),
 ) -> BulkDeleteResponse:
-    """Delete multiple files from the object store in bulk.
-
-    Requires ``platform_admin`` role.
-    """
+    """Delete multiple files from the object store in bulk."""
     store = get_object_store()
     deleted: list[str] = []
     errors: list[dict[str, Any]] = []

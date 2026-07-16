@@ -181,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await apiPost<{
       access_token: string;
       refresh_token: string;
-    }>("/api/v1/auth/login", { email, password, auth_method: "local" });
+    }>("/api/v1/auth/login", { email, password });
     setTokens(data.access_token, data.refresh_token);
     setLoginProvider("local");
     await fetchUser();

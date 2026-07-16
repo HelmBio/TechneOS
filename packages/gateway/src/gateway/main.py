@@ -13,11 +13,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from core.config import get_settings
 from core.database.postgres import dispose_engine
 from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.logging import RequestLoggingMiddleware
+from gateway.openapi import install_openapi, swagger_ui_html
 from gateway.routes.admin import router as admin_router
 from gateway.routes.health import router as health_router
 from gateway.routes.proxy import router as proxy_router
@@ -45,7 +47,7 @@ def create_app() -> FastAPI:
         description="Unified entry point for all platform services",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
+        docs_url=None,  # replaced below with a cookie-omitting Swagger UI
         redoc_url="/redoc",
     )
 
@@ -80,6 +82,17 @@ def create_app() -> FastAPI:
         prefix=settings.api_v1_prefix,
         tags=["proxy"],
     )
+
+    # Replace the gateway's own (proxy-only) schema with one aggregated from the
+    # downstream services, so /docs shows the real per-resource API.
+    install_openapi(app)
+
+    # Custom Swagger UI whose "Try it out" omits the session cookie, so a call is
+    # authenticated only by a token pasted into Authorize (the lock icons then
+    # mean what they say). The default /docs is disabled above.
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui() -> HTMLResponse:
+        return swagger_ui_html(app)
 
     return app
 

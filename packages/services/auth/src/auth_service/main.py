@@ -17,6 +17,7 @@ from auth_service.routes import (
     teams,
     users,
 )
+from core.auth.openapi import install_permission_annotations
 from core.config import get_settings
 from core.database.postgres import dispose_engine
 from core.exceptions import (
@@ -27,6 +28,7 @@ from core.exceptions import (
     PlatformError,
     ValidationError,
 )
+from core.openapi import short_operation_id
 
 
 @asynccontextmanager
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
+    generate_unique_id_function=short_operation_id,
     title="TechneOS — Auth Service",
     description="User authentication, organization management, and RBAC",
     version="0.1.0",
@@ -104,3 +107,6 @@ app.include_router(labels.router, prefix=f"{prefix}/admin", tags=["labels"])
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy", "service": "auth"}
+
+# Document per-endpoint RBAC permissions in the OpenAPI schema.
+install_permission_annotations(app)

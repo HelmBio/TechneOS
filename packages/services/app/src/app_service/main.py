@@ -10,6 +10,7 @@ from app_service.deployer import start_worker, stop_worker
 from app_service.routes import apps, launches
 from app_service.runtime_proxy import router as runtime_router
 from app_service.seeds import reconcile_embedded_apps
+from core.auth.openapi import install_permission_annotations
 from core.config import get_settings
 from core.database.postgres import dispose_engine
 from core.exceptions import (
@@ -24,6 +25,7 @@ from core.exceptions import (
 # Import models whose tables are referenced by ForeignKey so SQLAlchemy
 # can resolve them when compiling the mapper for App / AppLaunch.
 from core.models.user import Org, User  # noqa: F401
+from core.openapi import short_operation_id
 
 
 @asynccontextmanager
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
+    generate_unique_id_function=short_operation_id,
     title="TechneOS — Apps",
     description="Register and launch interactive web applications",
     version="0.1.0",
@@ -99,3 +102,6 @@ app.include_router(runtime_router, prefix=f"{prefix}/apps/runtime", tags=["apps-
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy", "service": "app-service"}
+
+# Document per-endpoint RBAC permissions in the OpenAPI schema.
+install_permission_annotations(app)

@@ -77,4 +77,7 @@ def require_permission(resource: str, action: str, scope: str = "own") -> Callab
         check_permission(permissions, resource, action, scope)
         return True
 
+    # Expose the requirement so the OpenAPI layer can document which permission
+    # each endpoint needs (see core.auth.openapi.install_permission_annotations).
+    _check.required_permission = f"{resource}:{action}:{scope}"  # type: ignore[attr-defined]
     return _check

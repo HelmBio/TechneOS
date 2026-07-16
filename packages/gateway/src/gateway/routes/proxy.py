@@ -75,6 +75,10 @@ def _is_sse_request(request: Request, path: str) -> bool:
 @router.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    # Excluded from the schema: this catch-all would otherwise be the only
+    # operation the gateway documents. The real per-resource endpoints are
+    # merged in from each backend service by gateway.openapi.
+    include_in_schema=False,
 )
 async def proxy(request: Request, path: str) -> Response:
     """Forward requests to the appropriate backend service."""
