@@ -710,10 +710,10 @@ class TestSubmitRunInputs:
     @patch("pipeline_service.routes.runs.merge")
     @patch("pipeline_service.routes.runs.check_resource_access")
     @patch("pipeline_service.routes.runs.get_latest_active_version")
-    @patch("pipeline_service.routes.runs.get_pipeline")
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
     def test_submit_relocates_input_and_records_io_type_input(
         self,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         mock_get_version,
         mock_check_access,
         mock_merge,
@@ -729,12 +729,13 @@ class TestSubmitRunInputs:
     ):
         # Pipeline with one x-input ('ligands') bound to the 'dock' step.
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.slug = "hit-triage"
         mock_pipeline.steps = [{"name": "dock"}]
         mock_pipeline.parameters_schema = {
             "properties": {"ligands": {"x-input": True, "x-step": "dock"}}
         }
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
 
         mock_version = MagicMock()
         mock_version.id = "v-1"

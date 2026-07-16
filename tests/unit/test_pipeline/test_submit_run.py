@@ -85,7 +85,7 @@ class TestSubmitRun:
     def teardown_method(self):
         app.dependency_overrides.clear()
 
-    @patch("pipeline_service.routes.runs.get_pipeline")
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
     @patch("pipeline_service.routes.runs.get_latest_active_version")
     @patch("pipeline_service.routes.runs.create_run")
     @patch("pipeline_service.routes.runs.create_step_run")
@@ -96,19 +96,20 @@ class TestSubmitRun:
         mock_create_step_run,
         mock_create_run,
         mock_get_latest_active_version,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         auth_user,
         mock_session,
     ):
         # The parent holds the shape; the version holds bindings.
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.org_id = "org-1"
         mock_pipeline.steps = [
             {"name": "prep", "tool_slug": "ligand-prep", "depends_on": []},
             {"name": "dock", "tool_slug": "autodock-vina", "depends_on": ["prep"]},
         ]
         mock_pipeline.parameters_schema = {"properties": {"exhaustiveness": {"default": 8}}}
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
 
         mock_version = MagicMock()
         mock_version.id = "version-1"
@@ -139,26 +140,27 @@ class TestSubmitRun:
         assert data["status"] == "pending"
         assert data["id"] == "run-1"
         assert data["version_id"] == "version-1"
-        mock_get_pipeline.assert_called_once_with(mock_session, "pipeline-1")
+        mock_get_pipeline_by_slug.assert_called_once_with(mock_session, "pipeline-1")
         mock_get_latest_active_version.assert_called_once_with(mock_session, "pipeline-1")
         mock_create_run.assert_called_once()
         mock_create_step_run.assert_called()
         mock_dispatch_run.assert_called_once()
 
-    @patch("pipeline_service.routes.runs.get_pipeline")
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
     @patch("pipeline_service.routes.runs.get_latest_active_version")
     @patch("pipeline_service.routes.runs.create_run")
     def test_submit_run_merges_parameters(
         self,
         mock_create_run,
         mock_get_latest_active_version,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         auth_user,
         mock_session,
     ):
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.org_id = "org-1"
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
 
         # Run-input defaults now live on the parent shape's parameters_schema.
         mock_pipeline.steps = [{"name": "dock", "tool_slug": "autodock-vina", "depends_on": []}]
@@ -205,16 +207,15 @@ class TestSubmitRun:
 
         assert response.status_code == 403
 
-    @patch("pipeline_service.routes.runs.get_pipeline")
-    def test_submit_run_pipeline_not_found(
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
+    def test_submit_run_unknown_slug_not_found(
         self,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         auth_user,
         mock_session,
     ):
-        from core.exceptions import NotFoundError
-
-        mock_get_pipeline.side_effect = NotFoundError("Pipeline", "pipeline-1")
+        # Slug lookup reports a miss by returning None rather than raising.
+        mock_get_pipeline_by_slug.return_value = None
 
         app.dependency_overrides[get_current_user] = lambda: auth_user
         app.dependency_overrides[get_async_session] = lambda: mock_session
@@ -223,25 +224,55 @@ class TestSubmitRun:
         response = client.post(
             "/api/v1/pipeline-runs",
             json={
-                "pipeline_id": "pipeline-1",
+                "pipeline_id": "no-such-pipeline",
                 "parameters": {},
             },
         )
 
         assert response.status_code == 404
+        assert "no-such-pipeline" in response.json()["detail"]
 
     @patch("pipeline_service.routes.runs.get_pipeline")
-    @patch("pipeline_service.routes.runs.get_latest_active_version")
-    def test_submit_run_no_active_version(
+    def test_submit_run_unknown_uuid_not_found(
         self,
-        mock_get_latest_active_version,
         mock_get_pipeline,
         auth_user,
         mock_session,
     ):
+        # A UUID-shaped id takes the by-id path, which raises instead.
+        from core.exceptions import NotFoundError
+
+        unknown = "0e5a1c9e-1f9d-4d9b-9c3a-6f0b2f7a1234"
+        mock_get_pipeline.side_effect = NotFoundError("Pipeline", unknown)
+
+        app.dependency_overrides[get_current_user] = lambda: auth_user
+        app.dependency_overrides[get_async_session] = lambda: mock_session
+
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/pipeline-runs",
+            json={
+                "pipeline_id": unknown,
+                "parameters": {},
+            },
+        )
+
+        assert response.status_code == 404
+        mock_get_pipeline.assert_called_once_with(mock_session, unknown)
+
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
+    @patch("pipeline_service.routes.runs.get_latest_active_version")
+    def test_submit_run_no_active_version(
+        self,
+        mock_get_latest_active_version,
+        mock_get_pipeline_by_slug,
+        auth_user,
+        mock_session,
+    ):
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.org_id = "org-1"
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
         mock_get_latest_active_version.return_value = None
 
         app.dependency_overrides[get_current_user] = lambda: auth_user
@@ -259,23 +290,25 @@ class TestSubmitRun:
         assert response.status_code == 409
         assert "no active version" in response.json()["detail"].lower()
 
-    @patch("pipeline_service.routes.runs.get_pipeline")
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
     @patch("pipeline_service.crud.versions.get_pipeline_version")
     @patch("pipeline_service.routes.runs.create_run")
     def test_submit_run_specific_version(
         self,
         mock_create_run,
         mock_get_pipeline_version,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         auth_user,
         mock_session,
     ):
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.org_id = "org-1"
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
 
         mock_version = MagicMock()
         mock_version.id = "version-2"
+        # The version must belong to the pipeline the slug resolved to.
         mock_version.pipeline_id = "pipeline-1"
         mock_version.default_parameters = {}
         mock_version.steps = [{"name": "dock", "tool_slug": "autodock-vina"}]
@@ -300,18 +333,19 @@ class TestSubmitRun:
         assert response.status_code == 201
         mock_get_pipeline_version.assert_called_once_with(mock_session, "version-2")
 
-    @patch("pipeline_service.routes.runs.get_pipeline")
+    @patch("pipeline_service.routes.runs.get_pipeline_by_slug")
     @patch("pipeline_service.crud.versions.get_pipeline_version")
     def test_submit_run_version_mismatch(
         self,
         mock_get_pipeline_version,
-        mock_get_pipeline,
+        mock_get_pipeline_by_slug,
         auth_user,
         mock_session,
     ):
         mock_pipeline = MagicMock()
+        mock_pipeline.id = "pipeline-1"
         mock_pipeline.org_id = "org-1"
-        mock_get_pipeline.return_value = mock_pipeline
+        mock_get_pipeline_by_slug.return_value = mock_pipeline
 
         mock_version = MagicMock()
         mock_version.id = "version-2"
