@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
 """Ingest a build-artifacts manifest into the compute_artifacts inventory.
 
-A platform-admin setup step that writes straight to the DB — no gateway HTTP
-call, no admin token — run alongside ``setup/seed.py`` once the stack is up.
-Platform-service and tool-runtime images are built in the
-CodePipeline build stage where the gateway isn't reachable; ``build-and-push.sh``
-emits a manifest that this script ingests once the stack is up.
+A gateway operation: it authenticates as a platform admin and POSTs each entry
+to ``/api/v1/compute-artifacts`` — the same idempotent upsert the catalog build
+scripts use. Run once the stack is up, alongside ``register_platform_assistant``.
+Platform-service and tool-runtime images are built in the CodePipeline build
+stage where the gateway isn't reachable; ``build-and-push.sh`` emits a manifest
+that this script ingests afterwards.
 
 The manifest is a JSON array of objects::
 
@@ -17,92 +19,57 @@ Read from a path argument or stdin::
     python setup/register_compute_artifacts.py build-artifacts.json
     python setup/register_compute_artifacts.py < manifest.json
 
-Idempotent: upserts on (kind, name, version, registry_url), matching the
-``register_artifact`` CRUD used by the HTTP path.
+Idempotent server-side on (kind, name, version, registry_url).
 """
-import asyncio
+
+import argparse
 import json
 import sys
-from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from management.registration import (
+    add_auth_args,
+    add_env_arg,
+    auth_headers,
+    authenticate,
+    record_artifact,
+    resolve_api_url,
+)
 
-from core.database.postgres import get_async_engine, get_session_factory
-from core.models.artifact import ComputeArtifact
-from core.models.user import User  # noqa: F401  resolves the published_by FK target
 
-
-async def _upsert(session: AsyncSession, entry: dict[str, Any]) -> str:
-    """Upsert one manifest entry; returns 'created' or 'updated'."""
-    kind = entry["kind"]
-    name = entry["name"]
-    version = entry["version"]
-    registry_url = entry.get("registry_url")
-
-    registry_match = (
-        ComputeArtifact.registry_url.is_(None)
-        if registry_url is None
-        else ComputeArtifact.registry_url == registry_url
-    )
-    existing = (
-        await session.execute(
-            select(ComputeArtifact).where(
-                ComputeArtifact.kind == kind,
-                ComputeArtifact.name == name,
-                ComputeArtifact.version == version,
-                registry_match,
-            )
-        )
-    ).scalar_one_or_none()
-
-    now = datetime.now(UTC)
-    if existing is not None:
-        existing.origin = entry.get("origin", existing.origin)
-        if entry.get("digest"):
-            existing.digest = entry["digest"]
-        if entry.get("source_commit_sha"):
-            existing.source_commit_sha = entry["source_commit_sha"]
-        if existing.status == "deleted":
-            existing.status = "available"
-        existing.published_at = now
-        return "updated"
-
-    session.add(
-        ComputeArtifact(
-            kind=kind,
+def ingest(api_url: str, headers: dict[str, Any], manifest: list[dict[str, Any]]) -> None:
+    for entry in manifest:
+        record_artifact(
+            api_url,
+            headers,
+            kind=entry["kind"],
             origin=entry.get("origin", "other"),
-            name=name,
-            version=version,
-            registry_url=registry_url,
+            name=entry["name"],
+            version=entry["version"],
+            registry_url=entry.get("registry_url"),
             digest=entry.get("digest"),
             source_commit_sha=entry.get("source_commit_sha"),
-            status="available",
-            metadata_=entry.get("metadata", {}),
-            published_at=now,
+            metadata=entry.get("metadata"),
         )
-    )
-    return "created"
-
-
-async def register_artifacts(manifest: list[dict[str, Any]]) -> None:
-    engine = get_async_engine()
-    factory = get_session_factory()
-    created = updated = 0
-    async with factory() as session:
-        for entry in manifest:
-            result = await _upsert(session, entry)
-            created += result == "created"
-            updated += result == "updated"
-        await session.commit()
-    await engine.dispose()
-    print(f"Artifact inventory: {created} created, {updated} updated.")
+    print(f"Artifact inventory: ingested {len(manifest)} entr{'y' if len(manifest) == 1 else 'ies'}.")
 
 
 def main() -> None:
-    if len(sys.argv) > 1:
-        with open(sys.argv[1]) as f:
+    parser = argparse.ArgumentParser(
+        description="Ingest a build-artifacts manifest into the compute_artifacts inventory.",
+    )
+    add_env_arg(parser)
+    add_auth_args(parser)
+    parser.add_argument(
+        "manifest",
+        nargs="?",
+        default=None,
+        help="Path to the manifest JSON (reads stdin if omitted)",
+    )
+    args = parser.parse_args()
+
+    if args.manifest:
+        with open(args.manifest) as f:
             raw = f.read()
     else:
         raw = sys.stdin.read()
@@ -114,7 +81,15 @@ def main() -> None:
     if not isinstance(manifest, list):
         print("Error: manifest must be a JSON array.", file=sys.stderr)
         sys.exit(1)
-    asyncio.run(register_artifacts(manifest))
+
+    api_url = resolve_api_url(args.env)
+    print(f"=== Target environment: {args.env} ===")
+    print(f"  API URL:  {api_url}")
+    print()
+
+    token = authenticate(api_url, args.env, args.email, args.password)
+    headers = auth_headers(token)
+    ingest(api_url, headers, manifest)
 
 
 if __name__ == "__main__":

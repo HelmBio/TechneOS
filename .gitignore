@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+# Real per-environment deploy secrets (e.g. deploy/single-host/.env.prod).
+# The committed templates are the *.example files (.env.prod.example, ...).
+.env.prod
+.env.*.prod
+.env.staging
+.env.*.staging
 
 # `make backup` output — database dumps and bucket contents, i.e. real user
 # data and secrets. Never committable.

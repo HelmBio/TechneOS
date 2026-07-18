@@ -51,13 +51,13 @@ restore: ## Restore from a backup (usage: make restore dir=./backups/<timestamp>
 # --- Platform setup (run once after infra is up, before catalog registration) ---
 # See setup/ for the full sequence a platform admin runs on a fresh deployment.
 
-seed: ## Seed default roles, org, team, and admin user (run after migrate)
-	uv run python setup/database/seed.py
+seed: ## Seed default roles, org, team, admin user, and LLM provider (run after migrate)
+	uv run python migrations/seed/seed.py
 
 publish-wheels: ## Build + publish the platform wheels the catalog imports (tool-runtime, management)
 	./bin/build-register-platform-wheels.sh
 
-register-platform-assistant: ## Register the built-in Platform Assistant + its LLM provider (needs the stack up)
+register-platform-assistant: ## Register the built-in Platform Assistant against the seeded LLM provider (needs the stack up)
 	uv run python setup/register_platform_assistant.py
 
 # --- Development ---

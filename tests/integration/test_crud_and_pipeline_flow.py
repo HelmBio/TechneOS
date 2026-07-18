@@ -23,8 +23,8 @@ async def live_auth_token():
 
     test_email = "crud-flow-test@example.com"
 
-    # Look up default org — the seeded org's slug is whatever this
-    # deployment's seed config says (local .techneos.<env>.json, gitignored), so
+    # Look up default org — the seeded org's slug depends on this deployment's
+    # config (seed.defaults.json + any DEFAULT_ORG_SLUG override in .env), so
     # fall back to creating "default" rather than assuming it's been seeded.
     factory = get_session_factory()
     async with factory() as session:

@@ -1,17 +1,27 @@
-"""Database seeding — create the default roles, org, team, and admin user.
+"""Database seeding — default roles, org, team, admin user, and LLM provider.
 
 A platform-admin operation, run once after the infrastructure and schema are
 up (``make up`` + ``make migrate``) and before any catalog items are
 registered. Not part of any shipped wheel and not imported by the services at
-runtime — it writes directly to the database.
+runtime — it writes directly to the database, which is why it lives alongside
+the migrations rather than in ``setup/`` (whose scripts all go through the
+gateway API).
 
-Config is loaded from ``.techneos.<env>.json`` next to this file (e.g.
-``.techneos.development.json``), falling back to ``.techneos.example.json``.
-The org, team, and admin-user values can be overridden per deployment with
-``DEFAULT_*`` variables in ``.env`` (see ``SeedOverrides``); role definitions
-stay in the JSON, since their permission lists are too structured for env vars.
+Config is loaded from ``seed.defaults.json`` next to this file — one file for
+every environment. The org, team, and admin-user values can be overridden per
+deployment with ``DEFAULT_*`` variables in ``.env`` (see ``SeedOverrides``);
+role definitions stay in the JSON, since their permission lists are too
+structured for env vars and don't vary by environment anyway.
 
-    python setup/database/seed.py   # or: make seed
+The default LLM provider that powers the Platform Assistant is seeded here too:
+its fields default from the JSON ``llm_provider`` block, and its API key comes
+only from ``DEFAULT_LLM_API_KEY`` (a secret, never committed). Without that key
+the provider is skipped — a keyless provider can't serve the assistant — but
+roles/org/team/admin still seed. ``register_platform_assistant`` (a gateway
+operation in ``setup/``) then discovers this provider and registers the agent
+against it.
+
+    python migrations/seed/seed.py   # or: make seed
 """
 
 from __future__ import annotations
@@ -24,13 +34,15 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.providers import hash_password
 from core.config import get_settings
 from core.database.postgres import get_async_engine, get_session_factory
+from core.models.llm_provider import LLMProvider
 from core.models.user import Org, Role, Team, User
+from core.security.fernet import encrypt_value
 
 
 class SeedOverrides(BaseSettings):
@@ -69,6 +81,52 @@ _OVERRIDE_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+class LLMProviderOverrides(BaseSettings):
+    """``DEFAULT_LLM_*`` overrides for the seeded LLM provider, read from ``.env``.
+
+    The API key has no JSON default — it is supplied only via
+    ``DEFAULT_LLM_API_KEY``, so nothing secret lives in a committed file. When
+    it is unset the provider is skipped entirely (see :func:`seed_llm_provider`).
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    default_llm_name: str | None = None
+    default_llm_slug: str | None = None
+    default_llm_provider_type: str | None = None
+    default_llm_base_url: str | None = None
+    default_llm_default_model: str | None = None
+    default_llm_max_tokens: int | None = None
+    default_llm_api_key: str | None = None
+
+
+# DEFAULT_LLM_* field name -> llm_provider JSON key.
+_LLM_OVERRIDE_MAP: dict[str, str] = {
+    "default_llm_name": "name",
+    "default_llm_slug": "slug",
+    "default_llm_provider_type": "provider_type",
+    "default_llm_base_url": "base_url",
+    "default_llm_default_model": "default_model",
+    "default_llm_max_tokens": "max_tokens",
+    "default_llm_api_key": "api_key",
+}
+
+
+def _llm_provider_config(config: dict[str, Any]) -> dict[str, Any]:
+    """The JSON ``llm_provider`` block with ``DEFAULT_LLM_*`` env overrides applied.
+
+    The API key comes only from ``DEFAULT_LLM_API_KEY`` (a secret, never in the
+    committed JSON); everything else defaults from the JSON block.
+    """
+    provider = dict(config.get("llm_provider", {}))
+    overrides = LLMProviderOverrides()
+    for attr, key in _LLM_OVERRIDE_MAP.items():
+        value = getattr(overrides, attr)
+        if value is not None:
+            provider[key] = value
+    return provider
+
+
 def _default_team_slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return s or "team"
@@ -82,25 +140,20 @@ def _apply_overrides(config: dict[str, Any], overrides: SeedOverrides) -> None:
             config.setdefault(section, {})[key] = value
 
 
-def load_seed_config(env: str = "development") -> dict[str, Any]:
-    """Load seed configuration for ``env``.
+def load_seed_config() -> dict[str, Any]:
+    """Load ``seed.defaults.json`` (next to this file) and overlay ``DEFAULT_*``.
 
-    Tries ``.techneos.<env>.json`` first, then falls back to
-    ``.techneos.example.json`` for the base values, then overlays any
-    ``DEFAULT_*`` overrides from ``.env`` onto the org/team/admin-user fields.
+    One file for every environment: the base values live in the JSON, and any
+    ``DEFAULT_*`` overrides in ``.env`` are overlaid onto the org/team/admin-user
+    fields (see :func:`_apply_overrides`).
     """
-    seed_dir = Path(__file__).resolve().parent
-    candidates = [
-        seed_dir / f".techneos.{env}.json",
-        seed_dir / ".techneos.example.json",
-    ]
-    for path in candidates:
-        if path.exists():
-            with open(path) as f:
-                config = cast(dict[str, Any], json.load(f))
-            _apply_overrides(config, SeedOverrides())
-            return config
-    raise FileNotFoundError(f"No seed config found. Tried: {', '.join(str(p) for p in candidates)}")
+    path = Path(__file__).resolve().parent / "seed.defaults.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Seed config not found: {path}")
+    with open(path) as f:
+        config = cast(dict[str, Any], json.load(f))
+    _apply_overrides(config, SeedOverrides())
+    return config
 
 
 async def seed_roles(session: AsyncSession, config: dict[str, Any]) -> None:
@@ -143,7 +196,7 @@ async def seed_default_org(session: AsyncSession, config: dict[str, Any]) -> Org
     org_cfg = config.get("org", {})
     slug = org_cfg.get("slug")
     if not slug:
-        raise ValueError("org.slug is required in seed config (.techneos.<env>.json)")
+        raise ValueError("org.slug is required in seed config (seed.defaults.json)")
     result = await session.execute(select(Org).where(Org.slug == slug))
     org = result.scalar_one_or_none()
     if org is None:
@@ -230,10 +283,105 @@ async def seed_admin_user(session: AsyncSession, org: Org, config: dict[str, Any
     return user
 
 
+async def seed_llm_provider(
+    session: AsyncSession, org: Org, admin: User, config: dict[str, Any]
+) -> None:
+    """Upsert the default LLM provider that powers the Platform Assistant.
+
+    Written straight to the DB — like the rest of seeding, and mirroring what
+    the auth-service create endpoint does (Fernet-encrypt the key at rest, and
+    enforce a single default per org) — so a fresh deployment has a provider
+    before ``register_platform_assistant`` runs.
+
+    Skipped when ``DEFAULT_LLM_API_KEY`` is unset (a keyless provider can't
+    serve the assistant) or when ``SECRETS_ENCRYPTION_KEY`` is absent (the key
+    can't be stored at rest without it). In both cases roles/org/team/admin are
+    still seeded — only the provider is skipped, with an actionable hint.
+    Idempotent: matched by slug, re-syncing its fields on subsequent runs.
+    """
+    provider = _llm_provider_config(config)
+    api_key = provider.get("api_key")
+    if not api_key:
+        print(
+            "  Skipping LLM provider: DEFAULT_LLM_API_KEY not set "
+            "(a keyless provider can't serve the Platform Assistant)."
+        )
+        return
+    if not get_settings().secrets_encryption_key:
+        print(
+            "  Skipping LLM provider: DEFAULT_LLM_API_KEY is set but "
+            "SECRETS_ENCRYPTION_KEY is not — it's needed to store the key at rest."
+        )
+        print('    Generate one: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"')
+        return
+
+    slug = provider.get("slug")
+    if not slug:
+        raise ValueError("llm_provider.slug is required in seed config (seed.defaults.json)")
+    default_model = provider.get("default_model")
+    if not default_model:
+        raise ValueError("llm_provider.default_model is required in seed config")
+
+    name = provider.get("name", slug)
+    provider_type = provider.get("provider_type", "openai_compatible")
+    base_url = provider.get("base_url")
+    supported_models = provider.get("supported_models", [])
+    max_tokens = provider.get("max_tokens")
+    is_default = provider.get("is_default", True)
+    encrypted = encrypt_value(api_key)
+
+    # A single default per org (matches the auth-service create endpoint):
+    # clear any other default before this one is (re)set.
+    if is_default:
+        await session.execute(
+            update(LLMProvider)
+            .where(
+                LLMProvider.org_id == org.id,
+                LLMProvider.is_default.is_(True),
+                LLMProvider.slug != slug,
+            )
+            .values(is_default=False)
+        )
+
+    existing = (
+        await session.execute(select(LLMProvider).where(LLMProvider.slug == slug))
+    ).scalar_one_or_none()
+
+    if existing is None:
+        session.add(
+            LLMProvider(
+                id=str(uuid.uuid4()),
+                name=name,
+                slug=slug,
+                provider_type=provider_type,
+                base_url=base_url,
+                encrypted_api_key=encrypted,
+                default_model=default_model,
+                supported_models=supported_models,
+                max_tokens=max_tokens,
+                is_default=is_default,
+                is_active=True,
+                org_id=org.id,
+                created_by=admin.id,
+            )
+        )
+        print(f"  Created LLM provider: {slug}")
+    else:
+        existing.name = name
+        existing.provider_type = provider_type
+        existing.base_url = base_url
+        existing.encrypted_api_key = encrypted
+        existing.default_model = default_model
+        existing.supported_models = supported_models
+        existing.max_tokens = max_tokens
+        existing.is_default = is_default
+        print(f"  Updated LLM provider: {slug}")
+
+
 async def seed() -> None:
     """Run all seed operations."""
     print("Seeding database...")
-    config = load_seed_config(get_settings().environment)
+    config = load_seed_config()
 
     engine = get_async_engine()
     factory = get_session_factory()
@@ -241,7 +389,8 @@ async def seed() -> None:
     async with factory() as session:
         await seed_roles(session, config)
         org = await seed_default_org(session, config)
-        await seed_admin_user(session, org, config)
+        admin = await seed_admin_user(session, org, config)
+        await seed_llm_provider(session, org, admin, config)
         await session.commit()
 
     print("Seeding complete.")

@@ -2,9 +2,10 @@
 
 One-time (mostly) operations a **platform admin** runs on a fresh TechneOS
 deployment — after the infrastructure and schema are up, and **before** any
-catalog items can be registered. None of this ships in a wheel or runs inside
-the services; it seeds the database and publishes the wheels a catalog repo
-depends on.
+catalog items can be registered. Everything here goes **through the gateway
+API** (authenticating as the seeded admin); none of it touches the database
+directly or ships in a wheel. The direct-DB bootstrap — `make seed` — lives
+with the migrations it resembles (`migrations/seed/`), not here.
 
 ## Run order
 
@@ -13,13 +14,13 @@ depends on.
 make up
 make migrate
 
-# 1. Seed roles, the default org/team, and the admin user
-make seed                       # → setup/database/seed.py
+# 1. Seed roles, org/team, admin user, and the default LLM provider (direct DB)
+make seed                       # → migrations/seed/seed.py
 
 # 2. Bring the services up
 make dev-all                    # (or the production deploy)
 
-# 3. Register the built-in Platform Assistant + its LLM provider (via the API)
+# 3. Register the built-in Platform Assistant against the seeded provider
 make register-platform-assistant   # → setup/register_platform_assistant.py
 
 # 4. Build + publish the platform wheels the catalog imports, and record them
@@ -30,18 +31,16 @@ make publish-wheels             # → bin/build-register-platform-wheels.sh
 
 | Script | Make target | What it does | How it writes |
 |--------|-------------|--------------|---------------|
-| `seed.py` | `seed` | Default roles, org, team, admin user | direct DB |
-| `register_platform_assistant.py` | `register-platform-assistant` | Default LLM provider + built-in assistant agent | gateway API (needs admin token) |
+| `register_platform_assistant.py` | `register-platform-assistant` | Register the built-in assistant agent against the seeded default provider | gateway API (needs admin token) |
 | `wheels/publish_tool_runtime.py` | `publish-wheels` | Build/publish `techneos-tool-runtime`; build the runtime image | index + API |
 | `wheels/publish_management.py` | `publish-wheels` | Build/publish `techneos-management` | index + API |
-| `register_compute_artifacts.py` | — | Ingest a build-artifacts manifest into the inventory | direct DB |
+| `register_compute_artifacts.py` | — | Ingest a build-artifacts manifest into the inventory | gateway API (needs admin token) |
 
-Seed config lives in `setup/database/.techneos.<env>.json` (falls back to the committed
-`.techneos.example.json`). The org, team, admin-user, and LLM-provider values can be
-overridden per deployment with `DEFAULT_*` variables in `.env` (see `.env.example`);
-role definitions stay in the JSON. The LLM provider's API key comes **only** from
-`DEFAULT_LLM_API_KEY` — never a committed file — and `register-platform-assistant`
-skips registration entirely if it (or any other required provider field) is missing.
+`register-platform-assistant` reads back the default LLM provider through the
+API and points the assistant at it; if no provider exists it skips with a hint
+to run `make seed` first. The provider itself — including its API key, taken
+**only** from `DEFAULT_LLM_API_KEY` (never a committed file) — is created by
+`make seed`; see `migrations/seed/` and `.env.example` for its config.
 
 ## Enabling the catalog
 

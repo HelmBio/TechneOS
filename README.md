@@ -48,8 +48,8 @@ The target technology stack:
 | `packages/portal/` | The web portal (Next.js 16 / React 19 / TypeScript / Tailwind CSS v4) — the primary UI for datasets, tools, pipelines, agents, apps, tasks, and admin; talks to the gateway REST API only |
 | `packages/execution/` | The execution layer — Apache Airflow DAGs, the `ToolOperator`, status callbacks, and pluggable compute backends (Docker, AWS Batch, Slurm, human). Runs inside the Airflow containers; not a uv workspace member |
 | `tests/` | Test suite — `tests/unit` (fast, mocked) and `tests/integration` (marked `integration`, need the stack up) |
-| `setup/` | Platform-admin operations run once on a fresh deployment (seed, register the Platform Assistant, publish the wheels the catalog imports) — see [`setup/README.md`](setup/README.md) |
-| `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema |
+| `setup/` | Platform-admin operations run once on a fresh deployment, all through the gateway API (register the Platform Assistant, publish the wheels the catalog imports) — see [`setup/README.md`](setup/README.md) |
+| `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema, plus `migrations/seed/` — the direct-DB seed (`make seed`) for default roles, org, team, admin, and LLM provider |
 | `keycloak/techneos-realm.dev.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO, Airflow) |
 | `Makefile` | Developer command shortcuts (`make help`) |
@@ -67,7 +67,7 @@ cp .env.example .env   # defaults work for local dev
 make up                # start PostgreSQL, MinIO, Valkey, DevPI, Keycloak
 make install           # install the Python workspace
 make migrate           # apply the database schema
-make seed              # create default roles, org, team, and an admin user
+make seed              # create default roles, org, team, admin user, and LLM provider
 make install-portal    # install the web portal's npm dependencies
 make dev-all-portal    # run every backend service + the web portal (localhost:3000)
 ```
@@ -79,7 +79,7 @@ for just the web portal, and `make dev-cli cmd="dataset list"` for the CLI.
 [`bin/dev.sh`](bin/dev.sh). Run `make help` to see every target.
 
 After `make seed`, log in with the seeded admin account (`admin@example.com` /
-`changeme123`, from `setup/database/.techneos.example.json`)
+`changeme123`, from `migrations/seed/seed.defaults.json`)
 or register a new one from the login page. To enable Google/GitHub sign-in,
 see the "Authentication (Keycloak SSO)" section in [`AGENTS.md`](AGENTS.md) —
 it takes a Keycloak config in `.env` plus your own OAuth app credentials.

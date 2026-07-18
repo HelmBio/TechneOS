@@ -2,8 +2,9 @@
 
 Shared by the services that gate a definition on a published artifact: tool-service
 (tool versions, via ``_resolve_artifacts``) and agent-service (agent
-``package_config``). The write/ingest path lives in
-the top-level ``setup/register_compute_artifacts.py`` script.
+``package_config``). The write path is tool-service's ``register_artifact`` CRUD
+behind ``POST /api/v1/compute-artifacts``; ``setup/register_compute_artifacts.py``
+ingests a build manifest through that endpoint.
 """
 
 from __future__ import annotations

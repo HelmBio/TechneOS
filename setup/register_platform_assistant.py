@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Register the Platform Assistant with the TechneOS platform.
 
-Creates two resources if they don't already exist:
-  1. The default LLM provider — admin API
-  2. The Platform Assistant AgentDefinition (is_platform=True) — agents API
+A gateway operation: it authenticates as a platform admin and talks to the
+REST API only (no direct DB access). The default LLM provider it needs is
+seeded separately, straight to the DB, by ``migrations/seed/seed.py`` (run via
+``make seed``). This script discovers that provider and registers the built-in
+Platform Assistant AgentDefinition (``is_platform=True``) against it.
 
-The provider fields come from ``setup/database/.techneos.<env>.json``; the API
-key (a secret) and any overrides come from ``DEFAULT_LLM_*`` in ``.env``.
-Registration is skipped entirely if the required provider info (including the
-API key) is missing — a keyless provider can't serve the assistant.
+If no LLM provider exists yet, registration is skipped with a hint to seed one
+— a provider is what makes the assistant able to answer, so there's nothing to
+register without it.
 
-Idempotent: both operations check for existing resources by slug.
-Pass ``--upsert`` to recreate the agent definition even if it already exists.
+Idempotent: the agent is matched by slug. Pass ``--upsert`` to recreate the
+agent definition even if it already exists.
 
 Usage:
   python setup/register_platform_assistant.py                        # default: --env=local
@@ -28,16 +29,12 @@ Authentication (all envs):
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from pathlib import Path
 from typing import Any
 
 import httpx
 from platform_assistant.config import default_platform_assistant_config
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.config import get_settings
 from management.registration import (
     add_auth_args,
     add_env_arg,
@@ -51,100 +48,27 @@ from management.registration import (
 
 AGENT_SLUG = "platform-assistant"
 
-# Provider fields required to register a usable LLM provider. The api_key comes
-# only from the environment (it's a secret); the rest default from the JSON.
-_REQUIRED_LLM_FIELDS = ("name", "slug", "provider_type", "base_url", "default_model", "api_key")
 
-# DEFAULT_LLM_* env var (via the field name below) -> llm_provider config key.
-_LLM_OVERRIDE_MAP = {
-    "default_llm_name": "name",
-    "default_llm_slug": "slug",
-    "default_llm_provider_type": "provider_type",
-    "default_llm_base_url": "base_url",
-    "default_llm_default_model": "default_model",
-    "default_llm_max_tokens": "max_tokens",
-    "default_llm_api_key": "api_key",
-}
+def _find_default_provider(api_url: str, headers: dict, org_id: str) -> dict[str, Any] | None:
+    """Return the org's default (else first active) LLM provider, or ``None``.
 
-
-class LLMProviderOverrides(BaseSettings):
-    """``DEFAULT_LLM_*`` overrides for the seeded LLM provider, read from ``.env``.
-
-    The API key has no JSON default — it is supplied only here, so nothing
-    secret lives in a committed file.
+    The provider is seeded straight to the DB by ``make seed``; here we just
+    read it back through the API to point the assistant at it.
     """
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    default_llm_name: str | None = None
-    default_llm_slug: str | None = None
-    default_llm_provider_type: str | None = None
-    default_llm_base_url: str | None = None
-    default_llm_default_model: str | None = None
-    default_llm_max_tokens: int | None = None
-    default_llm_api_key: str | None = None
-
-
-def load_llm_provider_config() -> dict[str, Any]:
-    """Load the ``llm_provider`` block from the seed JSON, with ``.env`` overrides."""
-    seed_dir = Path(__file__).resolve().parent / "database"
-    candidates = [
-        seed_dir / f".techneos.{get_settings().environment}.json",
-        seed_dir / ".techneos.example.json",
-    ]
-    config: dict[str, Any] = {}
-    for path in candidates:
-        if path.exists():
-            with open(path) as f:
-                config = json.load(f).get("llm_provider", {})
-            break
-
-    overrides = LLMProviderOverrides()
-    for attr, key in _LLM_OVERRIDE_MAP.items():
-        value = getattr(overrides, attr)
-        if value is not None:
-            config[key] = value
-    return config
-
-
-def missing_llm_fields(config: dict[str, Any]) -> list[str]:
-    """Return the required provider fields that are absent or empty."""
-    return [field for field in _REQUIRED_LLM_FIELDS if not config.get(field)]
-
-
-def _ensure_llm_provider(api_url: str, headers: dict, org_id: str, config: dict[str, Any]) -> str:
-    """Create the default LLM provider if it doesn't exist. Returns its id."""
-    slug = config["slug"]
-    existing = find_resource_by_slug(
-        api_url, headers, "/api/v1/admin/llm-providers?skip=0&limit=100", slug
+    resp = httpx.get(
+        f"{api_url}/api/v1/orgs/{org_id}/llm-providers?limit=100", headers=headers
     )
-    if existing is not None:
-        print(f"  LLM provider already exists: {existing}")
-        return existing
-
-    print("  Not found — creating ...")
-    payload = {
-        "name": config["name"],
-        "slug": slug,
-        "provider_type": config["provider_type"],
-        "base_url": config["base_url"],
-        "default_model": config["default_model"],
-        "supported_models": config.get("supported_models", []),
-        "max_tokens": config.get("max_tokens"),
-        "is_default": config.get("is_default", True),
-        "api_key": config["api_key"],
-        "org_id": org_id,
-    }
-    resp = httpx.post(f"{api_url}/api/v1/admin/llm-providers", json=payload, headers=headers)
     if not resp.is_success:
         print(
-            f"Error: failed to create LLM provider (HTTP {resp.status_code}): {resp.text}",
+            f"Error: failed to list LLM providers (HTTP {resp.status_code}): {resp.text}",
             file=sys.stderr,
         )
         sys.exit(1)
-    provider_id = resp.json()["id"]
-    print(f"  Created LLM provider: {provider_id}")
-    return provider_id
+    providers = [p for p in resp.json().get("items", []) if p.get("is_active", True)]
+    if not providers:
+        return None
+    # Prefer the one flagged default; otherwise the first active provider.
+    return next((p for p in providers if p.get("is_default")), providers[0])
 
 
 def _ensure_agent(
@@ -187,8 +111,7 @@ def _ensure_agent(
         "is_platform": True,
         "is_public": True,
         "system_prompt": prompt,
-        # Point the assistant at the provider we just registered, so the two
-        # stay in sync even when the provider slug/model are overridden in .env.
+        # Point the assistant at the seeded default provider, by slug + model.
         "model_config": {
             "provider": provider["slug"],
             "model": provider["default_model"],
@@ -224,26 +147,7 @@ def main() -> None:
     print(f"  API URL:  {api_url}")
     print()
 
-    provider = load_llm_provider_config()
-    missing = missing_llm_fields(provider)
-    if missing:
-        print("=== Skipping Platform Assistant registration ===")
-        print(f"  Missing required LLM provider info: {', '.join(missing)}")
-        print("  Set DEFAULT_LLM_API_KEY (and any other DEFAULT_LLM_* overrides) in .env,")
-        print("  then re-run. A provider without an API key can't serve the assistant.")
-        return
-
-    # The platform encrypts the API key at rest, which needs SECRETS_ENCRYPTION_KEY;
-    # without it the create call fails server-side, so skip with an actionable hint.
-    if not get_settings().secrets_encryption_key:
-        print("=== Skipping Platform Assistant registration ===")
-        print("  DEFAULT_LLM_API_KEY is set, but SECRETS_ENCRYPTION_KEY is not configured —")
-        print("  the platform needs it to store the API key at rest. Generate one with:")
-        print('    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"')
-        print("  add it to .env as SECRETS_ENCRYPTION_KEY, restart the auth service, then re-run.")
-        return
-
-    token = authenticate(api_url, args.email, args.password)
+    token = authenticate(api_url, args.env, args.email, args.password)
     headers = auth_headers(token)
 
     print("=== Resolving org_id ===")
@@ -251,8 +155,15 @@ def main() -> None:
     print(f"  org_id: {org_id}")
     print()
 
-    print(f"=== LLM Provider: {provider['slug']} ===")
-    _ensure_llm_provider(api_url, headers, org_id, provider)
+    print("=== Locating the default LLM provider ===")
+    provider = _find_default_provider(api_url, headers, org_id)
+    if provider is None:
+        print("=== Skipping Platform Assistant registration ===")
+        print("  No LLM provider found for this org. Seed one first:")
+        print("    set DEFAULT_LLM_API_KEY (and SECRETS_ENCRYPTION_KEY) in .env, then `make seed`.")
+        print("  A provider is what lets the assistant answer, so there's nothing to register yet.")
+        return
+    print(f"  Using provider: {provider['slug']} (model: {provider['default_model']})")
     print()
 
     print(f"=== Platform Assistant AgentDefinition: {AGENT_SLUG} ===")

@@ -45,9 +45,9 @@ async def test_full_auth_flow(auth_client, _cleanup_test_user):
 
     factory = get_session_factory()
     async with factory() as session:
-        # The seeded org's slug is whatever this deployment's seed config
-        # says (local .techneos.<env>.json, gitignored) — fall back to creating
-        # "default" rather than assuming it matches the checked-in example.
+        # The seeded org's slug depends on this deployment's config —
+        # seed.defaults.json plus any DEFAULT_ORG_SLUG override in .env — so
+        # fall back to creating "default" rather than assuming it matches.
         result = await session.execute(select(Org).where(Org.slug == "default"))
         org = result.scalar_one_or_none()
         if org is None:

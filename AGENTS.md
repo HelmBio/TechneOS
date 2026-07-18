@@ -145,13 +145,18 @@ someone decides whether to proceed. After a reset, either restore a backup, or
 `make migrate && make seed` plus `docker compose restart keycloak airflow` —
 Keycloak re-imports its realm at startup when the realm is absent.
 
-After migrating, `make seed` runs `setup/database/seed.py` to create default
-roles, a default org/team, and an admin user (`admin@example.com` /
-`changeme123`, from `setup/database/.techneos.<environment>.json` — falls back to the
-committed `setup/database/.techneos.example.json` if no environment-specific file exists).
-Idempotent: re-running it upserts roles and only fills in missing fields on
-existing rows, so it's safe to run again after a `make down-v && make up`
-against a fresh volume.
+After migrating, `make seed` runs `migrations/seed/seed.py` to create default
+roles, a default org/team, an admin user (`admin@example.com` / `changeme123`,
+from `migrations/seed/seed.defaults.json` — one file for every environment,
+with per-deployment values overridable via `DEFAULT_*` in `.env`), and the
+default LLM provider that powers the Platform Assistant. The provider's
+API key comes only from `DEFAULT_LLM_API_KEY` (never a committed file), and is
+skipped if that or `SECRETS_ENCRYPTION_KEY` is unset — a keyless provider can't
+serve the assistant. Seed writes directly to the DB, which is why it lives with
+the migrations rather than in `setup/` (whose scripts all go through the gateway
+API). Idempotent: re-running it upserts roles/provider and only fills in missing
+fields on existing rows, so it's safe to run again after a `make down-v && make
+up` against a fresh volume.
 
 ## Service tier & gateway
 
@@ -257,25 +262,33 @@ in step with the gateway package version.
 `setup/` holds the platform-admin operations run once on a fresh deployment,
 after infra + schema are up (`make up`, `make migrate`) and **before** any
 catalog items are registered. These scripts are **not** part of any shipped
-wheel and are **not** imported by the services at runtime — they write to the
-DB or drive the gateway API directly:
+wheel and are **not** imported by the services at runtime. `setup/` is now
+gateway-only — every script there drives the gateway API; the one direct-DB
+step, `make seed`, lives with the migrations (`migrations/seed/`) it resembles.
 
-- `setup/database/seed.py` (`make seed`) — default roles, org/team, admin user. Reads
-  `setup/database/.techneos.<env>.json`.
+- `migrations/seed/seed.py` (`make seed`) — **direct DB.** Default roles,
+  org/team, admin user, and the default LLM provider. Reads
+  `migrations/seed/seed.defaults.json` (one file for all environments;
+  `DEFAULT_*` env vars override per deployment); the provider's API key comes
+  only from `DEFAULT_LLM_API_KEY`. Ships in the gateway image via the `COPY migrations`
+  layer, so the deploy can run it in-container.
 - `setup/wheels/{tool_runtime,management}.py` (`make publish-wheels`, via
   `bin/build-register-platform-wheels.sh`) — build + publish the two wheels a
   catalog repo depends on (`techneos-tool-runtime`, `techneos-management`) to
   the package index, and record them in the `compute_artifacts` inventory.
 - `setup/register_platform_assistant.py` (`make register-platform-assistant`) —
-  create the default LLM provider + the built-in Platform Assistant agent via
-  the gateway API. (Needs the stack up + an admin token.)
-- `setup/register_compute_artifacts.py` — ingest a build-artifacts manifest
-  into the `compute_artifacts` inventory.
+  read back the seeded default LLM provider and register the built-in Platform
+  Assistant agent against it, via the gateway API. Skips if no provider exists
+  (run `make seed` first). (Needs the stack up + an admin token.)
+- `setup/register_compute_artifacts.py` — authenticate as admin and POST a
+  build-artifacts manifest to `/api/v1/compute-artifacts` (the same endpoint the
+  catalog build scripts use). (Needs the stack up + an admin token.)
 
 **Zero runtime coupling:** services never import these. The one read helper
 they *do* share — `core.database.compute_artifacts.find_artifact` — stays in
-`core` (it's a pure inventory lookup, not seeding). Ruff lints `setup/`; mypy
-does not (operational scripts, like `packages/execution`).
+`core` (it's a pure inventory lookup, not seeding). Ruff lints `setup/` and
+`migrations/seed/`; mypy checks neither (operational scripts, like
+`packages/execution`).
 
 **The catalog repo contract.** The separate `techneos-catalog` repo holds the
 tools/agents/datasets/pipelines/apps. Each catalog package:
