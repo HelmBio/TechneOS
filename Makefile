@@ -40,13 +40,13 @@ migrate-down: ## Rollback last migration
 	uv run alembic downgrade -1
 
 backup: ## Dump every database + the object store to ./backups/<timestamp>/
-	./bin/backup.sh
+	./bin/data-admin.sh backup --env local
 
 reset-data: ## DESTRUCTIVE — empty every database, bucket and cache (prompts first)
-	./bin/reset-data.sh
+	./bin/data-admin.sh reset --env local
 
 restore: ## Restore from a backup (usage: make restore dir=./backups/<timestamp>)
-	./bin/restore.sh $(dir)
+	./bin/data-admin.sh restore --env local --dir $(dir)
 
 # --- Platform setup (run once after infra is up, before catalog registration) ---
 # See setup/ for the full sequence a platform admin runs on a fresh deployment.

@@ -161,15 +161,14 @@ obtain a cert and re-run — the stack itself is unaffected.
 
 ## Backups
 
-`bin/backup.sh` / `bin/restore.sh` (the repo-root `make backup` / `make restore`
-targets) find the stack's containers by compose label and work through
-`docker exec`, so they aren't dev-only in logic — but they act on the **local**
-Docker daemon. Run from your workstation they'd hit your dev stack, not the
-remote host.
+Use `bin/data-admin.sh` from your workstation. `backup --env prod` ships the
+script to the host over SSH+sudo and dumps every database and the object store
+into `/data/techneos/backups/<ts>` **on the host** (reading the deployment's real
+credentials from the containers). That directory is on the data volume, which
+survives redeploys, so backups persist there; `--keep N` prunes to the N most
+recent (default 10). Copy a backup to S3 for off-host durability.
 
-To back up the production host, run them **on the host**. They aren't in the
-deploy bundle (which ships only the compose stack + Airflow code), so check out
-the repo there or copy the two scripts over, and give them the deployment's
-`POSTGRES_USER` / `POSTGRES_PASSWORD` and `MINIO_*` in the environment — they
-default to the *dev* values otherwise (the filled values live in
-`/data/techneos/deploy/ec2/.env`). Take a backup before every upgrade.
+`restore --env prod --dir <name>` restores an on-host backup in place (a name
+under `/data/techneos/backups`, or an absolute path); pass a local directory
+instead and it's uploaded first. Take a backup before every upgrade. Omit
+`--env prod` to act on the local dev stack.

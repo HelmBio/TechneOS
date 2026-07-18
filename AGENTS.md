@@ -108,42 +108,52 @@ is defined in a single baseline migration, `migrations/versions/0001_initial_sch
 Database Safety Rules above — never run migrations against a production database
 without explicit permission.
 
-`make backup` ([`bin/backup.sh`](bin/backup.sh)) captures everything the platform
-keeps state in — the `techneos`, `keycloak` and `airflow` databases, the object
-store bucket, and the Valkey RDB — into `./backups/<timestamp>/`, alongside a
-generated `RESTORE.md` carrying the exact restore commands for that backup. It
-resolves containers by Compose service label rather than by name, so it works
-whatever the project is called. It exits non-zero and names what it missed if any
-component could not be captured; a backup tool reporting success it didn't earn is
-worse than one that fails. `backups/` is gitignored: those dumps are real user
-data. Keycloak is in there because it owns the realms and SSO identities — the
-`techneos` database alone does not describe who can log in.
+[`bin/data-admin.sh`](bin/data-admin.sh) is the one tool for the platform's
+stateful stores — the `techneos`, `keycloak` and `airflow` databases, the
+object-store bucket, and the Valkey RDB — with three subcommands and a target
+environment (`--env local`, the default, or `--env prod`). It resolves containers
+by Compose service label (so the project name doesn't matter) and reads DB/MinIO
+credentials from each container's own environment, so it never assumes dev
+passwords and works the same against a production host.
 
-`make restore dir=./backups/<timestamp>` ([`bin/restore.sh`](bin/restore.sh)) puts
-a backup back, restoring whatever it holds and skipping what it doesn't. It
-creates any target database that is missing — a fresh volume has only `techneos`,
-since keycloak and airflow are created by their own services' init — and restarts
-the services that own their schema afterwards. It refuses while the app services
-are up: `pg_restore --clean` drops each object before recreating it, and a live
-session blocks that, so it says so up front rather than failing halfway.
+- `bin/data-admin.sh backup [--env …] [--dir <out>] [--keep N]` (`make backup`)
+  dumps everything to `./backups/<timestamp>/` locally (`--env prod` writes it on
+  the host instead — see below). It exits non-zero and names what it
+  missed if any component could not be captured; a backup reporting success it
+  didn't earn is worse than one that fails. `backups/` is gitignored — those dumps
+  are real user data. Keycloak is included because it owns the realms and SSO
+  identities; the `techneos` database alone doesn't describe who can log in.
+- `bin/data-admin.sh restore --dir <backup-dir> [--env …]` (`make restore dir=…`)
+  puts a backup back, restoring what it holds and skipping what it doesn't, and
+  creating any missing target database — a fresh volume has only `techneos`, since
+  keycloak and airflow are created by their own services' init.
+- `bin/data-admin.sh reset [--env …]` (`make reset-data`) empties the same set,
+  dropping each database's schema rather than truncating so a restore lands on a
+  genuinely empty target (`pg_restore --clean` replaces only what a dump contains,
+  so a restore onto a live database is a merge, not a copy).
 
-**Valkey must be stopped before its RDB is replaced.** It writes memory to
-`dump.rdb` as it shuts down, so copying into a running container and restarting
-has the shutdown save overwrite the file you just placed — and then load it back,
-empty. The restore is silent and total: verified by planting a key, copying the
-RDB in, restarting, and finding zero keys. Stop, copy, start.
+restore and reset are destructive: they require the target name (`local`/`prod`)
+typed back (skip with `--yes`), and they quiesce the app first — stopping the
+service **containers** if the deployment is containerized (prod), or refusing
+while local dev services hold ports 8000-8008 (`make dev-stop`) — because
+`pg_restore --clean` drops each object before recreating it and a live session
+blocks that. **Valkey is stopped before its RDB is replaced**: it writes memory to
+`dump.rdb` on shutdown, so copying into a running container and restarting has the
+shutdown save overwrite the file just placed. Measure the bucket with tools the
+image actually has — the minio image has no `find`.
 
-`make reset-data` ([`bin/reset-data.sh`](bin/reset-data.sh)) empties the same set,
-dropping each database's schema rather than truncating so a restore lands on a
-target that is genuinely empty — `pg_restore --clean` replaces what a dump
-contains and leaves everything else, making a restore onto a live database a merge
-rather than a copy. It refuses outright unless `ENVIRONMENT=development`, prints
-what it is about to destroy with sizes, and requires the environment name typed
-back. Measure with tools the target image actually has: the minio image has no
-`find`, and a missing tool reporting an empty bucket is a lie told exactly where
-someone decides whether to proceed. After a reset, either restore a backup, or
-`make migrate && make seed` plus `docker compose restart keycloak airflow` —
-Keycloak re-imports its realm at startup when the realm is absent.
+`--env prod` targets the EC2 deployment: the script is shipped to the host and
+re-run there over SSH+sudo (SSH details from `deploy/ec2/.env.prod`). A prod
+backup is written to `/data/techneos/backups/<ts>` on the host and left there —
+that volume survives redeploys, so backups persist; copy them to S3 for off-host
+durability, and `--keep N` prunes to the N most recent (default 10). A prod
+restore's `--dir` is either an on-host backup (a name under
+`/data/techneos/backups`, or an absolute path — restored in place) or a local
+directory, which is uploaded first. After a reset, either restore a
+backup, or `make migrate && make seed` plus `docker compose restart keycloak
+airflow` — Keycloak re-imports its realm at startup when the realm is absent.
+See [`bin/data-admin.README.md`](bin/data-admin.README.md) for scenario-by-scenario
+usage (local vs prod, exact vs overlay restore).
 
 After migrating, `make seed` runs `migrations/seed/seed.py` to create default
 roles, a default org/team, an admin user (`admin@example.com` / `changeme123`,
