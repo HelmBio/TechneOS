@@ -11,7 +11,6 @@ which providers are available so it can render the right buttons.
 """
 
 import logging
-import os
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -75,11 +74,11 @@ async def _resolve_role_data(session: AsyncSession, user: User) -> tuple[str | N
 async def _default_org_id(session: AsyncSession) -> str | None:
     """Return the default org ID for JIT-provisioned users.
 
-    The org a first-seen SSO user is attached to. Its slug is the seeded
-    default org (``DEFAULT_ORG_SLUG``, default ``"default"``) — resolved by
-    slug at runtime rather than reading any seed-time config file.
+    The org a first-seen SSO user is attached to, resolved by slug at runtime
+    (``settings.default_org_slug`` <- ``DEFAULT_ORG_SLUG``) — the same value seed
+    used to create it. The fallback slug lives only in core config, not here.
     """
-    slug = os.environ.get("DEFAULT_ORG_SLUG", "default")
+    slug = get_settings().default_org_slug
     result = await session.execute(select(Org).where(Org.slug == slug))
     org = result.scalar_one_or_none()
     return org.id if org else None

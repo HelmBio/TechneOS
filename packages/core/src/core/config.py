@@ -88,6 +88,13 @@ class Settings(BaseSettings):
         ""  # external URL for OIDC endpoints (e.g. https://techneosapi.example.com/auth)
     )
 
+    # --- Default org for JIT-provisioned SSO users ---
+    # Slug of the org a first-seen SSO user is attached to; seed creates it with
+    # the same DEFAULT_ORG_SLUG, so runtime resolution and seeding agree. Override
+    # per deployment — this is the one place the fallback slug lives (services
+    # read it from here rather than hardcoding a literal).
+    default_org_slug: str = "default"
+
     @property
     def keycloak_issuer_url(self) -> str:
         """OIDC issuer URL for the configured realm."""
