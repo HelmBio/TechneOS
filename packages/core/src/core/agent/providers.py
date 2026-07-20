@@ -29,6 +29,7 @@ class ProviderConfig:
         supported_models: list[str] | None = None,
         max_tokens: int | None = None,
         fallback_key: str | None = None,
+        provider_type: str = "openai_compatible",
     ) -> None:
         self.slug = slug
         self.base_url = base_url
@@ -36,6 +37,7 @@ class ProviderConfig:
         self.supported_models = supported_models or []
         self.max_tokens = max_tokens
         self._fallback_key = fallback_key
+        self.provider_type = provider_type
 
     @property
     def api_key(self) -> str:

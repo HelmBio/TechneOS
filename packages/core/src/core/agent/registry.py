@@ -46,6 +46,7 @@ def register_provider_from_db_row(row: Any) -> None:
         supported_models=row.supported_models or [],
         max_tokens=row.max_tokens,
         fallback_key=key,
+        provider_type=getattr(row, "provider_type", "openai_compatible"),
     )
     get_registry().register(config, is_default=bool(row.is_default))
 

@@ -274,7 +274,7 @@ class LLMProviderCreate(BaseModel):
     description: str | None = None
     provider_type: str = Field(
         default="openai_compatible",
-        pattern=r"^(openai_compatible)$",
+        pattern=r"^(openai_compatible|google)$",
     )
     base_url: str | None = None
     api_key: str | None = Field(

@@ -27,7 +27,11 @@ class LLMProvider(Base, UUIDMixin, TimestampMixin):
         String(50),
         nullable=False,
         default="openai_compatible",
-        comment="openai_compatible — covers OpenAI, Azure, Gemini, vLLM, Ollama, etc.",
+        comment=(
+            "openai_compatible — OpenAI, Azure, vLLM, Ollama, Gemini non-thinking; "
+            "google — native google-genai path for Gemini thinking models (2.5+/3.x) "
+            "that need thought_signatures on multi-step tool calls."
+        ),
     )
     base_url: Mapped[str | None] = mapped_column(
         String(500),
