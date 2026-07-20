@@ -50,7 +50,7 @@ The target technology stack:
 | `tests/` | Test suite — `tests/unit` (fast, mocked) and `tests/integration` (marked `integration`, need the stack up) |
 | `setup/` | Platform-admin operations run once on a fresh deployment, all through the gateway API (register the Platform Assistant, publish the wheels the catalog imports) — see [`setup/README.md`](setup/README.md) |
 | `migrations/` + `alembic.ini` | Alembic setup with a single baseline migration defining the full schema, plus `migrations/seed/` — the direct-DB seed (`make seed`) for default roles, org, team, admin, and LLM provider |
-| `keycloak/techneos-realm.dev.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
+| `techneos-realm.keycloak.json` | Keycloak realm import for local dev — `techneos` realm, API/web clients, Google + GitHub identity providers |
 | `docker-compose.yml` | Local dev infrastructure (PostgreSQL, MinIO, Valkey, DevPI, Keycloak with SSO, Airflow) |
 | `Makefile` | Developer command shortcuts (`make help`) |
 | `pyproject.toml` | Root uv workspace (Python packages only — the web portal is a separate npm package; `packages/execution` is intentionally excluded, as it runs in the Airflow containers) |

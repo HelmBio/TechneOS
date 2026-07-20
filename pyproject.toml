@@ -69,7 +69,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/seed.py" = ["T201"]  # print is fine in seed scripts
-"**/register_compute_artifacts.py" = ["T201"]  # deploy-stage ingest script prints progress
 "**/main.py" = ["T201"]  # print is fine in startup/shutdown
 "**/events.py" = ["T201"]  # print for dev-visible event logging
 "**/crud/versions.py" = ["T201"]  # print for dev-visible event logging

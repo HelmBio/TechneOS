@@ -1,0 +1,221 @@
+{
+  "realm": "techneos",
+  "displayName": "${PLATFORM_SITE_NAME}",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": false,
+  "attributes": {},
+  "roles": {
+    "realm": [
+      {
+        "name": "platform_admin",
+        "description": "Full platform access"
+      },
+      {
+        "name": "org_admin",
+        "description": "Full access within organization"
+      },
+      {
+        "name": "project_lead",
+        "description": "Manage datasets and pipelines for team"
+      },
+      {
+        "name": "scientist",
+        "description": "Run pipelines and view team data"
+      },
+      {
+        "name": "viewer",
+        "description": "Read-only access to own data"
+      }
+    ]
+  },
+  "defaultRoles": [
+    "scientist"
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID:-google-client-id-not-set}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET:-google-client-secret-not-set}",
+        "defaultScope": "openid email profile",
+        "syncMode": "IMPORT",
+        "guiOrder": "1",
+        "redirectUri": "${PLATFORM_API_URL}/realms/techneos/broker/google/endpoint"
+      }
+    },
+    {
+      "alias": "github",
+      "providerId": "github",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${GITHUB_CLIENT_ID:-github-client-id-not-set}",
+        "clientSecret": "${GITHUB_CLIENT_SECRET:-github-client-secret-not-set}",
+        "defaultScope": "user:email",
+        "syncMode": "IMPORT",
+        "guiOrder": "2",
+        "redirectUri": "${PLATFORM_API_URL}/realms/techneos/broker/github/endpoint"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "techneos-api",
+      "name": "TechneOS API",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_CLIENT_SECRET}",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [
+        "${PLATFORM_PORTAL_URL}/*",
+        "${PLATFORM_API_URL}/*",
+        "http://127.0.0.1:*/callback"
+      ],
+      "webOrigins": [
+        "${PLATFORM_PORTAL_URL}",
+        "${PLATFORM_API_URL}"
+      ],
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "techneos-org-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "org_id",
+            "claim.name": "org_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "techneos-team-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "team_id",
+            "claim.name": "team_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "techneos-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "basic",
+        "profile",
+        "roles",
+        "email"
+      ]
+    },
+    {
+      "clientId": "techneos-web",
+      "name": "TechneOS Web Portal",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "${PLATFORM_PORTAL_URL}/*",
+        "http://localhost:8085/callback",
+        "http://127.0.0.1:8085/callback"
+      ],
+      "webOrigins": [
+        "${PLATFORM_PORTAL_URL}"
+      ],
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "techneos-org-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "org_id",
+            "claim.name": "org_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "techneos-team-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "team_id",
+            "claim.name": "team_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "techneos-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "basic",
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ]
+}

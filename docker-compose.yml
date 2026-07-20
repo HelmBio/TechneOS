@@ -149,7 +149,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./keycloak/techneos-realm.dev.json:/opt/keycloak/data/import/techneos-realm.dev.json:ro
+      - ./techneos-realm.keycloak.json:/opt/keycloak/data/import/techneos-realm.keycloak.json:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,12 +2,16 @@
 .env
 .env.local
 .env.*.local
-# Real per-environment deploy secrets (e.g. deploy/single-host/.env.prod).
-# The committed templates are the *.example files (.env.prod.example, ...).
+# Filled-in per-environment deploy secrets — every production secret lives in
+# these, never committable. The only env files in git are the *.example
+# templates (.env.prod.example, ...). Covers deploy/ec2/.env.prod,
+# environments/*.env, .env.staging, and the like.
 .env.prod
 .env.*.prod
+*.env.prod
 .env.staging
 .env.*.staging
+environments/
 
 # `make backup` output — database dumps and bucket contents, i.e. real user
 # data and secrets. Never committable.

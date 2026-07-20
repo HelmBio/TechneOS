@@ -4,7 +4,7 @@
 # environment, without touching any other data.
 #
 # Keycloak's realm-import env var substitution (the ${GOOGLE_CLIENT_ID} etc.
-# placeholders in keycloak/techneos-realm.dev.json) only happens ONCE, when
+# placeholders in techneos-realm.keycloak.json) only happens ONCE, when
 # the realm is first created on a fresh Postgres volume. If you rotate your
 # Google/GitHub OAuth app credentials afterward, the running realm keeps the
 # stale values — recreating the keycloak container updates its own env vars,

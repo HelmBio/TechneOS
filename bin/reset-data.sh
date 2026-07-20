@@ -19,7 +19,7 @@
 #   - restore a backup (see RESTORE.md in any backup directory), or
 #   - rebuild empty:  make migrate && make seed
 #     then `docker compose restart keycloak airflow` so each recreates its own
-#     schema — Keycloak re-imports keycloak/techneos-realm.dev.json on startup
+#     schema — Keycloak re-imports techneos-realm.keycloak.json on startup
 #     when the realm is absent, picking up current env values.
 #
 # Stop the services first (`make dev-stop`): their open sessions reference

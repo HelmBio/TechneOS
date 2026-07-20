@@ -1,0 +1,108 @@
+# nginx site for the EC2 deployment — the platform's only public edge.
+#
+# A template, not a ready config: nginx does no variable substitution, so
+# deploy/remote-deploy.sh renders ${PLACEHOLDER}s with envsubst before placing
+# it at /etc/nginx/sites-available/techneos. Placeholders:
+#
+#   PORTAL_HOST   portal hostname          e.g. techneos.example.com
+#   API_HOST      API/Keycloak hostname    e.g. api.techneos.example.com
+#   MINIO_BUCKET  object-store bucket       e.g. techneos-data
+#   CERT_NAME     certbot lineage name     (the -d passed first to certbot;
+#                                            one cert covers both hosts)
+#
+# TLS bootstrap (chicken-and-egg: 443 needs a cert, the cert needs :80 reachable):
+#   1. render + install this with only the :80 blocks reachable
+#   2. certbot certonly --webroot -w /var/www/certbot -d ${API_HOST} -d ${PORTAL_HOST}
+#   3. nginx -t && systemctl reload nginx
+# remote-deploy.sh does this in order; see deploy/ec2/README.md.
+
+# ── Portal ───────────────────────────────────────────────────────────────────
+server {
+    listen 80;
+    server_name ${PORTAL_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${PORTAL_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # The portal is the Next.js app and nothing else. Login redirects the
+    # browser to the API host (KEYCLOAK_URL), so Keycloak is not served here.
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ── API + Keycloak + object store ──────────────────────────────────────────
+server {
+    listen 80;
+    server_name ${API_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${API_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Keycloak login + SSO broker endpoints. KC_HOSTNAME is set to this host and
+    # KC_PROXY_HEADERS=xforwarded, so Keycloak emits correct absolute URLs — no
+    # sub_filter rewriting needed (the reference relied on it; we don't).
+    location ~ ^/(realms|resources|admin)/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    # MinIO presigned URLs. Must precede location / (^~ takes priority over the
+    # regex-free prefix match). Presigned URLs are signed with this host as
+    # MINIO_PUBLIC_ENDPOINT, so the Host header must reach MinIO unchanged or the
+    # signature check fails. No body limit: dataset uploads PUT straight here.
+    location ^~ /${MINIO_BUCKET}/ {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        client_max_body_size 0;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Tool/pipeline calls and large uploads through the API can run long.
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 1024m;
+    }
+}

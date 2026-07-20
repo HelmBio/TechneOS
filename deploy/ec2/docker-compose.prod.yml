@@ -1,0 +1,465 @@
+# Production topology — the whole platform on one host.
+#
+# Deployed to /data/techneos/docker-compose.yml by deploy/deploy.sh, next to a
+# .env rendered from your environment file. Run it from there, not from a repo
+# checkout: the paths below are relative to the deploy bundle.
+#
+#   docker compose --env-file /data/techneos/.env up -d
+#
+# Differences from the repo-root docker-compose.yml, which is for development:
+#   - every service runs here, not just the infrastructure. In development the
+#     nine backend services run on the host under `bin/dev.sh`.
+#   - images come from a registry rather than being built or run from source.
+#   - ports bind to 127.0.0.1 only. nginx is the sole public edge.
+#   - secrets have no defaults. `${VAR:?}` stops the deploy with a named
+#     variable rather than starting the platform with a development password.
+#   - no package index runs here; PYTHON_PACKAGE_INDEX_URL points at
+#     CodeArtifact, and tokens are minted per-install from the instance role.
+
+name: techneos
+
+# ── Shared fragments ─────────────────────────────────────────────────────────
+# Nine services share most of their environment. Repeating it per service is how
+# one of them quietly ends up pointing at the wrong database.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-platform-env: &platform-env
+  ENVIRONMENT: production
+  DEBUG: "false"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-techneos}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  POSTGRES_DB: ${POSTGRES_DB:-techneos}
+  VALKEY_URL: redis://valkey:6379/0
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
+  JWT_ALGORITHM: HS256
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:?set SECRETS_ENCRYPTION_KEY in .env}
+  # The org a first-seen SSO user is provisioned into — resolved by slug at
+  # runtime (auth-service), and the same value seed used to create it, so the two
+  # agree. Shared here so every service reads it instead of hardcoding a slug.
+  DEFAULT_ORG_SLUG: ${DEFAULT_ORG_SLUG:-default}
+
+x-minio-env: &minio-env
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+  MINIO_BUCKET: ${MINIO_BUCKET:-techneos-data}
+  MINIO_SECURE: "false"
+  # Host clients follow presigned URLs, so they must name the public edge, not
+  # the compose service.
+  MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:?set MINIO_PUBLIC_ENDPOINT in .env}
+
+# Ports are the ones each image serves — see packages/*/Dockerfile. They are not
+# interchangeable with any other deployment's.
+x-service-urls: &service-urls
+  AUTH_SERVICE_URL: http://auth-service:8001
+  DATASET_SERVICE_URL: http://dataset-service:8002
+  TOOL_SERVICE_URL: http://tool-service:8003
+  PIPELINE_SERVICE_URL: http://pipeline-service:8004
+  AGENT_SERVICE_URL: http://agent-service:8005
+  NOTIFICATION_SERVICE_URL: http://notification-service:8006
+  APP_SERVICE_URL: http://app-service:8007
+  TASK_SERVICE_URL: http://task-service:8008
+
+x-keycloak-env: &keycloak-env
+  # KEYCLOAK_URL is the BACKCHANNEL — server-to-server token exchange + JWKS from
+  # inside the containers, so it must be the internal compose service, NOT the
+  # public URL (a container calling its own public host hairpins and the token
+  # exchange 500s). Token validation checks signature + audience, not the issuer,
+  # so the internal URL is fine. KEYCLOAK_PUBLIC_URL is the browser-facing URL the
+  # auth endpoints are rewritten to (see auth-service /oidc/config).
+  KEYCLOAK_URL: http://keycloak:8080
+  KEYCLOAK_PUBLIC_URL: ${PLATFORM_API_URL:?set PLATFORM_API_URL in .env}
+  KEYCLOAK_REALM: ${KEYCLOAK_REALM:-techneos}
+  KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-techneos-api}
+  KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+  KEYCLOAK_WEB_CLIENT_ID: ${KEYCLOAK_WEB_CLIENT_ID:-techneos-web}
+  SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:-}
+
+x-airflow-client-env: &airflow-client-env
+  AIRFLOW_BASE_URL: http://airflow-webserver:8080
+  AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
+  AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:?set AIRFLOW_PASSWORD in .env}
+  AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-techneos_airflow_pipeline}
+  PLATFORM_CALLBACK_URL: http://gateway:8000
+
+x-airflow-env: &airflow-env
+  PYTHONPATH: /opt/airflow
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-techneos}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?set AIRFLOW_WEBSERVER_SECRET_KEY in .env}
+  AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+  _PIP_ADDITIONAL_REQUIREMENTS: "minio>=7.2"
+
+x-service: &service
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    postgres:
+      condition: service_healthy
+    valkey:
+      condition: service_healthy
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16.14-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-techneos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-techneos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-techneos} -d ${POSTGRES_DB:-techneos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    logging: *logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:9.1.0
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - valkey_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    logging: *logging
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD};
+      mc mb local/${MINIO_BUCKET:-techneos-data} --ignore-existing;
+      echo 'MinIO buckets initialized';
+      "
+
+  # Keycloak creates its own schema on boot but not the database itself.
+  # Idempotent: safe on every start.
+  keycloak-init:
+    image: postgres:16.14-alpine
+    logging: *logging
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until pg_isready -h postgres -U "${POSTGRES_USER:-techneos}" >/dev/null 2>&1; do sleep 1; done
+        psql -h postgres -U "${POSTGRES_USER:-techneos}" -d postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 \
+          || psql -h postgres -U "${POSTGRES_USER:-techneos}" -d postgres -c "CREATE DATABASE keycloak"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.1
+    restart: unless-stopped
+    logging: *logging
+    # `start`, not `start-dev`: production mode. No --optimized: we run the stock
+    # image with no `kc.sh build` step, so `start` must build on boot (--optimized
+    # forbids that and the server exits). --import-realm brings the realm up on
+    # first boot only — once it exists, this file is not read again, and
+    # identity-provider secrets are rotated with bin/sync-keycloak-idp-secrets.sh.
+    command: start --import-realm --proxy-headers=xforwarded --hostname-strict=false
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${PLATFORM_API_URL:?set PLATFORM_API_URL in .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-techneos}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PLATFORM_SITE_NAME: ${PLATFORM_SITE_NAME:-TechneOS}
+      # Substituted into techneos-realm.prod.json at import — the realm's
+      # redirect URIs and web origins are ${PLATFORM_*_URL} placeholders.
+      PLATFORM_API_URL: ${PLATFORM_API_URL:?set PLATFORM_API_URL in .env}
+      PLATFORM_PORTAL_URL: ${PLATFORM_PORTAL_URL:?set PLATFORM_PORTAL_URL in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+    volumes:
+      - ./techneos-realm.keycloak.prod.json:/opt/keycloak/data/import/techneos-realm.keycloak.prod.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-init:
+        condition: service_completed_successfully
+
+  # ── Orchestration ──────────────────────────────────────────────────────────
+  airflow-init:
+    image: apache/airflow:2.9.0-python3.12
+    logging: *logging
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        python << 'PYEOF'
+        import psycopg2
+        conn = psycopg2.connect(
+            host="postgres", user="${POSTGRES_USER:-techneos}",
+            password="${POSTGRES_PASSWORD}", dbname="postgres"
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname='airflow'")
+        if not cur.fetchone():
+            cur.execute("CREATE DATABASE airflow")
+            print("Created airflow database")
+        else:
+            print("Airflow database already exists")
+        cur.close()
+        conn.close()
+        PYEOF
+        airflow db migrate
+        airflow users create --role Admin --username ${AIRFLOW_USERNAME:-airflow} \
+          --password ${AIRFLOW_PASSWORD} --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} \
+          --firstname Admin --lastname TechneOS || true
+    environment:
+      <<: *airflow-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    image: apache/airflow:2.9.0-python3.12
+    restart: unless-stopped
+    logging: *logging
+    command: webserver
+    environment:
+      <<: [*airflow-env, *minio-env, *airflow-client-env]
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    volumes:
+      - ../../packages/execution/dags:/opt/airflow/dags:ro
+      - ../../packages/execution/operators:/opt/airflow/operators:ro
+      - ../../packages/execution/callbacks:/opt/airflow/callbacks:ro
+      - ../../packages/execution/backends:/opt/airflow/backends:ro
+      - ../../packages/execution/storage:/opt/airflow/storage:ro
+    ports:
+      - "127.0.0.1:8082:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.0-python3.12
+    restart: unless-stopped
+    logging: *logging
+    command: scheduler
+    environment:
+      <<: [*airflow-env, *minio-env, *airflow-client-env]
+      COMPUTE_BACKEND: ${COMPUTE_BACKEND:-docker}
+      DOCKER_NETWORK: ${DOCKER_NETWORK_NAME:-techneos}
+      # The scheduler starts tool containers as siblings via the host's docker
+      # socket, so this path is read inside the container and mounted from the
+      # host — both names describe the same directory.
+      TECHNEOS_SHARED_INPUT_DIR: /tmp/techneos-shared-inputs
+      TECHNEOS_HOST_SHARED_INPUT_DIR: ${TECHNEOS_HOST_SHARED_INPUT_DIR:-/data/techneos/airflow-inputs}
+      TECHNEOS_RUNTIME_IMAGE: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY in .env}/techneos/tool-runtime
+      TECHNEOS_RUNTIME_IMAGE_TAG: ${TOOL_RUNTIME_IMAGE_TAG:?set by deploy.sh}
+      # Credential-free base URL. The worker mints a CodeArtifact token per
+      # install from the instance role; nothing is stored here.
+      PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AIRFLOW_TASK_RETRIES: ${AIRFLOW_TASK_RETRIES:-1}
+      AIRFLOW_RETRY_DELAY_MINUTES: ${AIRFLOW_RETRY_DELAY_MINUTES:-1}
+      AIRFLOW_EXECUTION_TIMEOUT_HOURS: ${AIRFLOW_EXECUTION_TIMEOUT_HOURS:-24}
+    volumes:
+      - ../../packages/execution/dags:/opt/airflow/dags:ro
+      - ../../packages/execution/operators:/opt/airflow/operators:ro
+      - ../../packages/execution/callbacks:/opt/airflow/callbacks:ro
+      - ../../packages/execution/backends:/opt/airflow/backends:ro
+      - ../../packages/execution/storage:/opt/airflow/storage:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${TECHNEOS_HOST_SHARED_INPUT_DIR:-/data/techneos/airflow-inputs}:/tmp/techneos-shared-inputs
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ── Platform services ──────────────────────────────────────────────────────
+  gateway:
+    <<: *service
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY in .env}/techneos/gateway:${GATEWAY_IMAGE_TAG:?set by deploy.sh}
+    # remote-deploy.sh runs the in-container seed (migrations/seed/seed.py) in
+    # this container, and it reads the DEFAULT_*/DEFAULT_LLM_* overrides to create
+    # the admin and the default LLM provider. Load the deployed .env so seed sees
+    # them; only-in-file keys stay unset (so seed falls back to its JSON defaults),
+    # and the explicit `environment:` below still wins for anything it also sets.
+    env_file:
+      - .env
+    environment:
+      <<: [*platform-env, *minio-env, *service-urls, *keycloak-env, *airflow-client-env]
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS in .env}
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  auth-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/auth-service:${AUTH_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env, *service-urls, *keycloak-env]
+    # The admin "Infrastructure" page reads container status + logs through the
+    # Docker API (auth_service admin routes), so this service needs the host
+    # socket. Read-only: it only lists and tails, never starts/stops containers.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8001:8001"
+
+  dataset-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/dataset-service:${DATASET_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env]
+    ports:
+      - "127.0.0.1:8002:8002"
+
+  tool-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/tool-service:${TOOL_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env, *airflow-client-env]
+      PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+    ports:
+      - "127.0.0.1:8003:8003"
+
+  pipeline-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/pipeline-service:${PIPELINE_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env, *airflow-client-env]
+      TOOL_SERVICE_URL: http://tool-service:8003
+      PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+    ports:
+      - "127.0.0.1:8004:8004"
+
+  agent-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/agent-service:${AGENT_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env]
+      GATEWAY_URL: http://gateway:8000
+      PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "127.0.0.1:8005:8005"
+
+  notification-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/notification-service:${NOTIFICATION_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: *platform-env
+    ports:
+      - "127.0.0.1:8006:8006"
+
+  app-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/app-service:${APP_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *keycloak-env]
+      APP_DEPLOYER_BACKEND: ${APP_DEPLOYER_BACKEND:-docker}
+      APP_DEPLOYER_HOST: ${APP_DEPLOYER_HOST:-host.docker.internal}
+    # host.docker.internal is a Docker Desktop name; on a Linux host it has to
+    # be mapped explicitly or embedded apps resolve nothing.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8007:8007"
+
+  task-service:
+    <<: *service
+    image: ${IMAGE_REGISTRY}/techneos/task-service:${TASK_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: [*platform-env, *minio-env]
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+    ports:
+      - "127.0.0.1:8008:8008"
+
+  # NEXT_PUBLIC_* is inlined into the client bundle at build time, so this image
+  # is specific to one deployment's API URL — see deploy/build-and-push.sh. The
+  # value below only reaches server-side rendering.
+  portal:
+    image: ${IMAGE_REGISTRY}/techneos/portal:${PORTAL_IMAGE_TAG:?set by deploy.sh}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      NEXT_PUBLIC_API_URL: ${PLATFORM_API_URL}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - gateway
+
+volumes:
+  # Bind the heavy data onto the dedicated /data disk (not Docker's default
+  # location on the root disk). Namespaced under /data/techneos so it never
+  # collides with another deployment's /data/<name>. remote-deploy.sh creates
+  # these dirs before `up` — a bind volume errors if its device path is absent.
+  postgres_data:
+    driver: local
+    driver_opts: { type: none, device: /data/techneos/postgres, o: bind }
+  minio_data:
+    driver: local
+    driver_opts: { type: none, device: /data/techneos/minio, o: bind }
+  valkey_data:
+    driver: local
+    driver_opts: { type: none, device: /data/techneos/valkey, o: bind }
+
+networks:
+  default:
+    name: ${DOCKER_NETWORK_NAME:-techneos}

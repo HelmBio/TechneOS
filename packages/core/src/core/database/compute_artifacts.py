@@ -3,8 +3,8 @@
 Shared by the services that gate a definition on a published artifact: tool-service
 (tool versions, via ``_resolve_artifacts``) and agent-service (agent
 ``package_config``). The write path is tool-service's ``register_artifact`` CRUD
-behind ``POST /api/v1/compute-artifacts``; ``setup/register_compute_artifacts.py``
-ingests a build manifest through that endpoint.
+behind ``POST /api/v1/compute-artifacts``, which the catalog build scripts call
+on publish (``management.record_artifact``).
 """
 
 from __future__ import annotations

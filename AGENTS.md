@@ -280,9 +280,6 @@ step, `make seed`, lives with the migrations (`migrations/seed/`) it resembles.
   read back the seeded default LLM provider and register the built-in Platform
   Assistant agent against it, via the gateway API. Skips if no provider exists
   (run `make seed` first). (Needs the stack up + an admin token.)
-- `setup/register_compute_artifacts.py` — authenticate as admin and POST a
-  build-artifacts manifest to `/api/v1/compute-artifacts` (the same endpoint the
-  catalog build scripts use). (Needs the stack up + an admin token.)
 
 **Zero runtime coupling:** services never import these. The one read helper
 they *do* share — `core.database.compute_artifacts.find_artifact` — stays in
@@ -417,7 +414,7 @@ on boot but not the database itself. Local dev's Keycloak uses Postgres
 (`KC_DB=postgres`) rather than an embedded dev database, so it shares the same
 storage backend as the rest of the stack.
 
-`keycloak/techneos-realm.dev.json` is volume-mounted into the
+`techneos-realm.keycloak.json` is volume-mounted into the
 `keycloak` service's import directory and auto-imported on startup
 (`kc.sh start-dev --import-realm`) — it defines the `techneos` realm, the
 `techneos-api` / `techneos-web` clients, and Google + GitHub identity
@@ -440,7 +437,7 @@ Redirect URIs in the realm file assume `localhost:3000` (portal) and
 authorized redirect URIs together if you change ports/hosts.
 
 **Rotating OAuth credentials later:** the `${GOOGLE_CLIENT_ID}`-style env var
-substitution in `keycloak/techneos-realm.dev.json` only happens once, at
+substitution in `techneos-realm.keycloak.json` only happens once, at
 first import. If you change `GOOGLE_CLIENT_ID`/`GITHUB_CLIENT_ID`/etc. in
 `.env` afterward, the running realm keeps the stale values — recreating the
 `keycloak` container updates its own environment but not the identity

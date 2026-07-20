@@ -67,7 +67,8 @@
     "settings": {}
   },
   "team": {
-    "name": "Default Team"
+    "name": "Default Team",
+    "slug": "default"
   },
   "admin_user": {
     "email": "admin@example.com",

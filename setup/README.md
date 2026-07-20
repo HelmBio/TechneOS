@@ -34,7 +34,6 @@ make publish-wheels             # → bin/build-register-platform-wheels.sh
 | `register_platform_assistant.py` | `register-platform-assistant` | Register the built-in assistant agent against the seeded default provider | gateway API (needs admin token) |
 | `wheels/publish_tool_runtime.py` | `publish-wheels` | Build/publish `techneos-tool-runtime`; build the runtime image | index + API |
 | `wheels/publish_management.py` | `publish-wheels` | Build/publish `techneos-management` | index + API |
-| `register_compute_artifacts.py` | — | Ingest a build-artifacts manifest into the inventory | gateway API (needs admin token) |
 
 `register-platform-assistant` reads back the default LLM provider through the
 API and points the assistant at it; if no provider exists it skips with a hint
