@@ -1,4 +1,4 @@
-"""Compute artifact inventory routes — list, get, register (upsert), update.
+"""Compute artifact inventory routes — list, get, register (upsert), update, delete.
 
 The inventory records every built & published wheel / docker image. Build
 scripts call ``POST`` after publishing; the admin portal reads it to power
@@ -14,6 +14,7 @@ from core.database.postgres import get_async_session
 from core.models.common import TokenPayload
 from core.schemas.artifact import ArtifactRegister, ArtifactResponse, ArtifactUpdate
 from tool_service.crud.artifacts import (
+    delete_artifact,
     get_artifact,
     list_artifacts,
     register_artifact,
@@ -69,3 +70,13 @@ async def update_artifact_endpoint(
 ) -> ArtifactResponse:
     artifact = await update_artifact(session, artifact_id, data)
     return ArtifactResponse.model_validate(artifact)
+
+
+@router.delete("/{artifact_id}", status_code=204)
+async def delete_artifact_endpoint(
+    artifact_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+    _perm: bool = Depends(require_permission("compute_artifact", "delete", "*")),
+) -> None:
+    await delete_artifact(session, artifact_id)

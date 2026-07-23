@@ -33,12 +33,12 @@ def main() -> None:
 
     if args.skip_register:
         load_env_file(args.env)
-        build_and_publish_wheel(PACKAGE_DIR)
+        build_and_publish_wheel(PACKAGE_DIR, force=args.force)
         print("=== Published (not recorded — --skip-register) ===")
         return
 
     session = start_session(args)
-    version = publish_wheel_and_record(session, PACKAGE_DIR, origin="platform")
+    version = publish_wheel_and_record(session, PACKAGE_DIR, origin="platform", force=args.force)
     print(f"\n=== Done ===\n  Wheel: techneos-management=={version}")
 
 

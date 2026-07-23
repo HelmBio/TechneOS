@@ -1,6 +1,6 @@
 # TechneOS
 
-.PHONY: help up down down-v logs ps sync-idp-secrets migrate migrate-new migrate-down seed publish-wheels register-platform-assistant install lint format typecheck test test-unit test-integration test-cov test-cli test-management test-tool-runtime test-execution test-all dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
+.PHONY: help up down down-v logs ps sync-idp-secrets migrate migrate-new migrate-down seed register-platform-assistant install lint format typecheck test test-unit test-integration test-cov test-cli test-management test-tool-runtime test-execution test-all dev-gateway dev-auth dev-dataset dev-tool dev-pipeline dev-agent dev-notification dev-app dev-task dev-cli dev-all dev-all-portal dev-stop dev-portal install-portal build-portal test-portal clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -53,9 +53,6 @@ restore: ## Restore from a backup (usage: make restore dir=./backups/<timestamp>
 
 seed: ## Seed default roles, org, team, admin user, and LLM provider (run after migrate)
 	uv run python migrations/seed/seed.py
-
-publish-wheels: ## Build + publish the platform wheels the catalog imports (tool-runtime, management)
-	./bin/build-register-platform-wheels.sh
 
 register-platform-assistant: ## Register the built-in Platform Assistant against the seeded LLM provider (needs the stack up)
 	uv run python setup/register_platform_assistant.py
@@ -160,9 +157,6 @@ dev-task: ## Run task service in dev mode
 
 dev-cli: ## Run the CLI (usage: make dev-cli cmd="dataset list")
 	uv run python -m techneos_cli.main $(cmd)
-
-build-cli-wheel: ## Build the techneos-cli wheel the gateway serves at /cli/simple/
-	bin/build-cli-wheel.sh
 
 # --- Web portal ---
 

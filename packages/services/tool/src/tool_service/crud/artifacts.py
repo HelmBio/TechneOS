@@ -125,3 +125,10 @@ async def update_artifact(
         artifact.metadata_ = data.metadata
     await session.flush()
     return artifact
+
+
+async def delete_artifact(session: AsyncSession, artifact_id: str) -> None:
+    """Hard-delete a compute artifact record."""
+    artifact = await get_artifact(session, artifact_id)
+    await session.delete(artifact)
+    await session.flush()

@@ -91,6 +91,11 @@ def main() -> None:
         help="Also build + publish the techneos-tool-runtime wheel to the package index "
         "(so a split-out catalog repo can resolve the dep) and record it",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing version in index (default: auto-bump to {version}-{git})",
+    )
     args = parser.parse_args()
 
     load_env_file(args.env)
@@ -136,9 +141,10 @@ def main() -> None:
     # Publishing the wheel uses index credentials, not the platform JWT, so it
     # runs even under --skip-register (it just won't be recorded then).
     wheel_publish_url = None
+    wheel_version = version
     if args.publish_wheel:
         print("=== Build & publish wheel ===")
-        wheel_publish_url = build_and_publish_wheel(PACKAGE_DIR)
+        wheel_publish_url, wheel_version = build_and_publish_wheel(PACKAGE_DIR, force=args.force)
         print()
 
     if args.skip_register:
@@ -169,7 +175,7 @@ def main() -> None:
             kind="wheel",
             origin="platform",
             name=PACKAGE_NAME,
-            version=version,
+            version=wheel_version,
             registry_url=wheel_publish_url,
         )
 
