@@ -24,8 +24,6 @@ __pycache__/
 *.egg
 dist/
 build/
-# Built by `make build-cli-wheel`; the gateway serves it at /cli/simple/
-cli-dist/
 
 # Virtual environments
 .venv/

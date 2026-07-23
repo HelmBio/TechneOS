@@ -212,31 +212,16 @@ never the database directly:
 ### CLI distribution
 
 Each deployment serves its own client wheel; nothing is published to PyPI. The
-gateway image builds `packages/cli` into `/app/cli-dist` and exposes it at
-`/cli/simple/` ([`gateway/routes/cli.py`](packages/gateway/src/gateway/routes/cli.py)),
-so the CLI a customer installs is the one built from the image they install it
-from. Locally, `make build-cli-wheel` fills the same directory (`cli_wheel_dir`,
-relative to the process CWD). The index re-reads that directory per request, so
-a rebuilt wheel needs no gateway restart.
+CLI wheel is published to the platform's package index (DevPI locally,
+CodeArtifact in prod) and available via the `/simple/` proxy endpoint. This
+means the CLI a customer installs is version-matched to the platform.
 
-[`bin/build-cli-wheel.sh`](bin/build-cli-wheel.sh) stamps local builds with the
-commit they came from — `0.1.0+g1a2b3c4`, plus `.d<digest>` of the package's
-sources when it has uncommitted changes. That isn't cosmetic: **pip and uv key
-their caches on name + version**, so a rebuild carrying a version already
-installed is invisible to them. They report success and leave the copy they had,
-which reads as "my change did nothing". `pipx` compounds it — its `--force` is
-broken with the uv backend (it calls `uv venv` without `--clear`), and `uv cache
-clean` can block on the cache lock while the dev stack holds it. A distinct
-version per build sidesteps all of that.
+Locally, `bin/wheel-release.sh cli` builds and publishes the wheel to the index.
+The `/simple/` endpoint proxies requests to the underlying index, so CLI
+downloads work the same as any other package.
 
-The digest is why it's a digest and not a `.dirty` flag: a flag is the same
-string on every rebuild, so it fails for exactly the loop the stamp exists for —
-editing without committing. Keying on content means the version changes when, and
-only when, the code does, so an unchanged rebuild is still a legitimate cache hit.
-
-The gateway image builds from `pyproject.toml` directly, so release wheels carry
-the plain version; each release is a version customers haven't installed before,
-which is why their caches were never the problem.
+The CLI is published alongside other platform wheels (management, tool-runtime),
+so the same version management and `--force` behavior applies.
 
 Two constraints are easy to break:
 
@@ -250,15 +235,9 @@ Two constraints are easy to break:
   version across all of them, so anyone registering the unclaimed `techneos-cli`
   name on PyPI could outrank the wheel we serve.
 
-`/cli/` is unauthenticated (`PUBLIC_PREFIXES`) — a customer installs the client
-before they have any credentials. Downloads are restricted to the wheels the
-index itself enumerates, so a crafted filename can't reach other files. The
-schema's security is cleared for those prefixes too, so the lock icons in
-`/docs` keep matching what the middleware actually enforces.
-
-Only `GET /cli/version` is in the OpenAPI schema. The index pages and the wheel
-are `include_in_schema=False`: they serve HTML and binaries to a package
-installer, so a "Try it out" button on them is noise.
+The `/simple/` endpoint is unauthenticated — a customer installs the client
+before they have any credentials. Downloads are proxied to the underlying index
+with gateway credentials injected.
 
 Skew is advisory: the CLI sends `X-Client-Version` on every request and the
 gateway answers with `X-Client-Version-Warning` when the versions are
@@ -282,8 +261,7 @@ step, `make seed`, lives with the migrations (`migrations/seed/`) it resembles.
   `DEFAULT_*` env vars override per deployment); the provider's API key comes
   only from `DEFAULT_LLM_API_KEY`. Ships in the gateway image via the `COPY migrations`
   layer, so the deploy can run it in-container.
-- `setup/wheels/{tool_runtime,management}.py` (`make publish-wheels`, via
-  `bin/build-register-platform-wheels.sh`) — build + publish the two wheels a
+- `bin/wheel-release.sh platform` — build + publish the two wheels a
   catalog repo depends on (`techneos-tool-runtime`, `techneos-management`) to
   the package index, and record them in the `compute_artifacts` inventory.
 - `setup/register_platform_assistant.py` (`make register-platform-assistant`) —
@@ -309,7 +287,7 @@ tools/agents/datasets/pipelines/apps. Each catalog package:
   discovered lazily by the agent-service — `core` has no hard dependency on
   catalog content).
 
-So `make publish-wheels` is what makes a catalog checkout resolvable: without
+So `bin/wheel-release.sh platform` is what makes a catalog checkout resolvable: without
 those two wheels on the index, catalog `build_and_register.py` scripts can't
 install their build dependency.
 

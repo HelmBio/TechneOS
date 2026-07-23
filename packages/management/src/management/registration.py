@@ -109,22 +109,25 @@ def _is_codeartifact_url(url: str | None) -> bool:
 
 
 # ── Single-source package index (catalog repos configure just this) ────────
-# PLATFORM_PYTHON_PACKAGE_INDEX (or uv's UV_DEFAULT_INDEX) is the package-index simple URL.
+# PYTHON_PACKAGE_INDEX_URL (or uv's UV_DEFAULT_INDEX) is the package-index simple URL.
 # The wheel publish endpoint, the CodeArtifact token coordinates, and the ECR
 # registry are all DERIVED from it, so a standalone catalog repo configures one
 # value instead of a publish URL + CODEARTIFACT_* + AWS_*.
 # Explicit env vars still win when set — the monorepo deploy provides those
-# directly and never sets PLATFORM_PYTHON_PACKAGE_INDEX, so its behavior is unchanged.
+# directly and never sets PYTHON_PACKAGE_INDEX_URL, so its behavior is unchanged.
 
 
 def package_index_url() -> str | None:
     """The configured package-index URL with any embedded credentials stripped.
 
-    From ``PLATFORM_PYTHON_PACKAGE_INDEX`` (preferred) or ``UV_DEFAULT_INDEX`` (which
-    ``bin/_ca_auth.sh`` may have injected ``aws:<token>@`` into). Returns ``None``
-    when neither is set (e.g. the monorepo, which uses the explicit vars).
+    From ``PYTHON_PACKAGE_INDEX_URL`` (the standard env var used everywhere)
+    or ``UV_DEFAULT_INDEX`` (which ``bin/_ca_auth.sh`` may have injected
+    ``aws:<token>@`` into). Returns ``None`` when none is set.
     """
-    url = os.environ.get("PLATFORM_PYTHON_PACKAGE_INDEX") or os.environ.get("UV_DEFAULT_INDEX")
+    url = (
+        os.environ.get("PYTHON_PACKAGE_INDEX_URL")
+        or os.environ.get("UV_DEFAULT_INDEX")
+    )
     if not url:
         return None
     parsed = urlparse(url)
@@ -183,7 +186,7 @@ def _mint_codeartifact_token() -> str | None:
 
     try:
         # Explicit env vars win; otherwise derive domain/owner/region from the
-        # CodeArtifact index URL (PLATFORM_PYTHON_PACKAGE_INDEX / UV_DEFAULT_INDEX).
+        # CodeArtifact index URL (PYTHON_PACKAGE_INDEX_URL / UV_DEFAULT_INDEX).
         coords = _parse_codeartifact_coords(package_index_url())
         region = os.getenv("AWS_REGION") or (coords[2] if coords else "us-east-1")
         client = boto3.client("codeartifact", region_name=region)
@@ -225,7 +228,7 @@ def resolve_publish_credentials() -> tuple[str, str, str]:
     two env vars are used directly, defaulting to ``devpi`` / ``devpi``.
 
     The publish URL is ``PYTHON_PACKAGE_PUBLISH_URL`` when set, else derived from
-    the package index (``PLATFORM_PYTHON_PACKAGE_INDEX`` / ``UV_DEFAULT_INDEX`` minus the
+    the package index (``PYTHON_PACKAGE_INDEX_URL`` / ``UV_DEFAULT_INDEX`` minus the
     trailing ``simple/``), so a catalog repo configures only the index.
     """
     publish_url = os.environ.get("PYTHON_PACKAGE_PUBLISH_URL")
@@ -279,15 +282,20 @@ def build_wheel(package_dir: Path) -> Path:
     return wheels[0]
 
 
-def build_and_publish_wheel(package_dir: Path) -> str:
+def build_and_publish_wheel(package_dir: Path, force: bool = False) -> tuple[str, str]:
     """Build ``package_dir``'s wheel with ``uv build`` and publish it to the index.
 
     Shared by the platform packages that ship as wheels for catalog to depend on
     once it leaves the monorepo: ``techneos-tool-runtime`` and
-    ``techneos-management``. Returns the publish URL — use it as the inventory
-    ``registry_url``. Exits on build failure; a duplicate version is a no-op
-    ("already exists").
+    ``techneos-management``. Returns (publish_url, version) — use publish_url as
+    the inventory ``registry_url``.
+
+    Version handling:
+    - If version exists and force=True: overwrites the existing version
+    - If version exists and force=False: auto-bumps to {version}-{git_sha}
+      with a warning to bump the version in pyproject.toml
     """
+    meta = read_package_meta(package_dir)
     wheel = build_wheel(package_dir)
 
     publish_url, username, password = resolve_publish_credentials()
@@ -306,12 +314,87 @@ def build_and_publish_wheel(package_dir: Path) -> str:
     )
     if result.returncode != 0:
         if "already exists" in result.stderr:
-            print("  Wheel version already exists, skipping publish.")
+            if force:
+                print(f"  Version {meta.version} exists, attempting to overwrite with --force ...")
+                # For DevPI, try to delete and republish
+                # For CodeArtifact, versions are immutable - warn and continue
+                _warn_immutable_version(meta.version)
+                # Try to republish (may work on DevPI, will fail on CodeArtifact)
+                result = subprocess.run(
+                    ["uv", "publish", str(wheel)],
+                    cwd=package_dir,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=env,
+                )
+                if result.returncode != 0:
+                    print(f"Warning: Could not overwrite version {meta.version}:", file=sys.stderr)
+                    print(f"  {result.stderr.strip()}", file=sys.stderr)
+                    print(f"  For immutable indexes, you must bump the version.", file=sys.stderr)
+                else:
+                    print(f"  Overwrote {wheel.name}")
+            else:
+                # Auto-bump: append git SHA to version
+                git_sha = current_git_sha()
+                if git_sha:
+                    bumped_version = f"{meta.version}-{git_sha}"
+                    print(f"  Warning: Version {meta.version} already exists in index.")
+                    print(f"  Auto-bumping to {bumped_version} for this build.")
+                    print(f"  Bump the version in pyproject.toml for the next release.")
+                    # Rebuild with bumped version
+                    wheel = _rebuild_with_version(package_dir, bumped_version)
+                    result = subprocess.run(
+                        ["uv", "publish", str(wheel)],
+                        cwd=package_dir,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=env,
+                    )
+                    if result.returncode != 0:
+                        print(f"Warning: uv publish may have failed:\n{result.stderr}", file=sys.stderr)
+                    else:
+                        print(f"  Published {wheel.name} as {bumped_version}")
+                    return publish_url, bumped_version
+                else:
+                    print(f"  Warning: Version {meta.version} exists and not in a git repo.")
+                    print(f"  Cannot auto-bump. Use --force to overwrite or bump version manually.")
         else:
             print(f"Warning: uv publish may have failed:\n{result.stderr}", file=sys.stderr)
     else:
         print(f"  Published {wheel.name}")
-    return publish_url
+    return publish_url, meta.version
+
+
+def _warn_immutable_version(version: str) -> None:
+    """Warn that some indexes have immutable versions."""
+    print(f"  Note: Some indexes (like CodeArtifact) have immutable versions.")
+    print(f"  If this fails, the version {version} cannot be overwritten.")
+
+
+def _rebuild_with_version(package_dir: Path, new_version: str) -> Path:
+    """Rebuild wheel with a new version (used for auto-bump)."""
+    import tomllib
+    from pathlib import Path
+
+    pyproject = package_dir / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text())
+    original_version = data["project"]["version"]
+
+    # Temporarily modify version
+    content = pyproject.read_text()
+    content = content.replace(f'version = "{original_version}"', f'version = "{new_version}"')
+    pyproject.write_text(content)
+
+    try:
+        wheel = build_wheel(package_dir)
+        return wheel
+    finally:
+        # Restore original version
+        content = pyproject.read_text()
+        content = content.replace(f'version = "{new_version}"', f'version = "{original_version}"')
+        pyproject.write_text(content)
 
 
 def authenticate(
@@ -463,6 +546,7 @@ def publish_wheel_and_record(
     origin: str,
     entry_point: str | None = None,
     publish: bool = True,
+    force: bool = False,
 ) -> str:
     """Build the wheel, and (when ``publish``) push it to the index + record it.
 
@@ -471,23 +555,25 @@ def publish_wheel_and_record(
     *before* any version/definition that references it (hard-validated).
     ``origin`` is ``"platform"`` (the wheels) or ``"catalog"`` (catalog items).
     """
-    meta = read_package_meta(package_dir)
     if publish:
-        registry_url = build_and_publish_wheel(package_dir)
+        meta = read_package_meta(package_dir)
+        registry_url, version = build_and_publish_wheel(package_dir, force=force)
         record_artifact(
             session.api_url,
             session.headers,
             kind="wheel",
             origin=origin,
             name=meta.name,
-            version=meta.version,
+            version=version,
             registry_url=registry_url,
             metadata={"entry_point": entry_point} if entry_point else None,
         )
     else:
+        meta = read_package_meta(package_dir)
         build_wheel(package_dir)
+        version = meta.version
         print("  Built wheel (not published — --skip-publish).")
-    return meta.version
+    return version
 
 
 def current_git_sha() -> str | None:
@@ -622,6 +708,11 @@ def make_publish_parser(description: str) -> argparse.ArgumentParser:
         action="store_true",
         help="Publish the wheel but do not record it in the artifact inventory",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing version in index (default: auto-bump to {version}-{git})",
+    )
     return parser
 
 
@@ -644,7 +735,7 @@ def resolve_ecr_registry(env: str) -> str | None:
     """Return the ECR registry host for prod, or ``None`` for local.
 
     Account/region come from ``AWS_ACCOUNT_ID`` / ``AWS_REGION`` when set, else
-    are derived from the CodeArtifact package index (``PLATFORM_PYTHON_PACKAGE_INDEX`` /
+    are derived from the CodeArtifact package index (``PYTHON_PACKAGE_INDEX_URL`` /
     ``UV_DEFAULT_INDEX``) — same AWS account + region as the wheel registry, so a
     catalog repo configures only the index. Exits if neither is available.
     """
@@ -655,7 +746,7 @@ def resolve_ecr_registry(env: str) -> str | None:
     if not account:
         print(
             "Error: cannot resolve the AWS account for --env=prod — set "
-            "AWS_ACCOUNT_ID or PLATFORM_PYTHON_PACKAGE_INDEX (CodeArtifact URL).",
+            "AWS_ACCOUNT_ID or PYTHON_PACKAGE_INDEX_URL (CodeArtifact URL).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -898,3 +989,107 @@ def build_image_and_record(
         fatal=fatal,
     )
     return image_ref
+
+
+# ── Gateway upload (for catalog scripts) ──────────────────────────────────────
+
+
+def upload_wheel_to_gateway(
+    session: Session,
+    package_dir: Path,
+    *,
+    origin: str,
+    entry_point: str | None = None,
+) -> str:
+    """Build wheel and upload to gateway for publishing.
+
+    The gateway handles index authentication and publish. This replaces
+    ``publish_wheel_and_record`` for catalog scripts when the gateway
+    is the package index proxy.
+
+    Returns the package version.
+    """
+    meta = read_package_meta(package_dir)
+    wheel = build_wheel(package_dir)
+
+    print(f"  Uploading {wheel.name} to gateway ...")
+    with open(wheel, "rb") as f:
+        resp = httpx.post(
+            f"{session.api_url}/api/v1/artifacts/wheel",
+            files={"file": (wheel.name, f, "application/zip")},
+            data={"origin": origin, "entry_point": entry_point or ""},
+            headers=auth_headers(session.headers["Authorization"].split(" ", 1)[1], content_type=None),
+            timeout=300.0,
+        )
+    if resp.status_code not in (200, 201):
+        print(
+            f"Error: failed to upload wheel to gateway: "
+            f"HTTP {resp.status_code}: {resp.text}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"  Uploaded {wheel.name} to gateway")
+    return meta.version
+
+
+def upload_image_to_gateway(
+    session: Session,
+    *,
+    slug: str,
+    package_dir: Path,
+    version: str,
+    origin: str,
+    build_image: str | None = None,
+) -> str:
+    """Build docker image and upload tar to gateway for pushing.
+
+    The gateway handles registry authentication and push. This replaces
+    ``build_image_and_record`` for catalog scripts when the gateway
+    is the docker registry proxy.
+
+    Returns the image reference.
+    """
+    import tempfile
+
+    image = build_image or f"techneos/{slug}"
+
+    # Build image locally
+    print(f"  Building {image}:{version} ...")
+    _run_or_exit(
+        ["docker", "build", "-t", f"{image}:{version}", "-t", f"{image}:latest", str(package_dir)],
+        errmsg=f"docker build failed for {image}",
+    )
+
+    # Save to tar
+    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as tmp:
+        tar_path = Path(tmp.name)
+    print(f"  Saving image to {tar_path.name} ...")
+    _run_or_exit(
+        ["docker", "save", "-o", str(tar_path), f"{image}:{version}"],
+        errmsg=f"docker save failed for {image}:{version}",
+    )
+
+    # Upload to gateway
+    print(f"  Uploading {tar_path.name} to gateway ...")
+    try:
+        with open(tar_path, "rb") as f:
+            resp = httpx.post(
+                f"{session.api_url}/api/v1/artifacts/image",
+                files={"file": (tar_path.name, f, "application/x-tar")},
+                data={"slug": slug, "version": version, "origin": origin},
+                headers=auth_headers(session.headers["Authorization"].split(" ", 1)[1], content_type=None),
+                timeout=300.0,
+            )
+        if resp.status_code not in (200, 201):
+            print(
+                f"Error: failed to upload image to gateway: "
+                f"HTTP {resp.status_code}: {resp.text}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    finally:
+        tar_path.unlink(missing_ok=True)
+
+    print(f"  Uploaded {image}:{version} to gateway")
+    return f"{image}:{version}"

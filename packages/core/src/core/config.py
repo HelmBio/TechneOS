@@ -25,9 +25,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"  # comma-separated allowed origins
-    # Directory the gateway serves the techneos-cli wheel from, resolved against
-    # the process CWD — the app root both in the container and a source checkout.
-    cli_wheel_dir: str = "cli-dist"
     secrets_encryption_key: str = (
         ""  # Fernet key for encrypting secrets at rest (API keys, bucket credentials)
     )
@@ -197,14 +194,53 @@ class Settings(BaseSettings):
         validation_alias="PYTHON_PACKAGE_INDEX_URL",
         description="pip --index-url used to install pypi-type tools into the worker.",
     )
-    package_index_publish_url: str = "http://devpi:8080/root/pypi/"
-    package_index_user: str = ""
-    package_index_password: str = ""
+    package_index_publish_url: str = Field(
+        default="http://devpi:8080/root/pypi/",
+        validation_alias="PYTHON_PACKAGE_PUBLISH_URL",
+        description="URL the gateway publishes wheels to (CodeArtifact repo endpoint or devpi).",
+    )
+    package_index_user: str = Field(
+        default="devpi",
+        validation_alias="PYTHON_PACKAGE_USERNAME",
+        description="Username for package index publishing.",
+    )
+    package_index_password: str = Field(
+        default="devpi",
+        validation_alias="PYTHON_PACKAGE_PASSWORD",
+        description="Password/token for package index publishing.",
+    )
 
     @property
     def package_index_configured(self) -> bool:
         """True when a package index URL is set."""
         return bool(self.package_index_url)
+
+    # --- CodeArtifact Settings (for token minting) ---
+    # When set, the gateway mints fresh tokens for publishing instead of using
+    # static credentials. Only needed for CodeArtifact deployments.
+    codeartifact_domain: str = Field(
+        default="",
+        description="CodeArtifact domain for wheel publishing.",
+    )
+    codeartifact_domain_owner: str = Field(
+        default="",
+        description="AWS account ID that owns the CodeArtifact domain.",
+    )
+    codeartifact_repository: str = Field(
+        default="",
+        description="CodeArtifact repository name for wheel publishing.",
+    )
+
+    # --- Docker Image Registry (for pushing container tool images) ---
+    # For local dev: leave empty (images stay in local daemon).
+    # For prod: set to ECR URL (e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com).
+    # Authentication is via IAM (Docker daemon must be logged in via
+    # `aws ecr get-login-password | docker login`), not username/password.
+    docker_image_registry: str = Field(
+        default="",
+        validation_alias="DOCKER_IMAGE_REGISTRY",
+        description="Registry URL for pushing docker images (ECR URL for prod, empty for local).",
+    )
 
     # --- Gateway (used by platform tools to make authenticated API calls) ---
     gateway_url: str = "http://localhost:8000"

@@ -6,7 +6,12 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from gateway.middleware.auth import AUTH_PATHS, PUBLIC_PATHS, AuthMiddleware
+from gateway.middleware.auth import (
+    AUTH_PATHS,
+    PUBLIC_PATHS,
+    PUBLIC_PREFIXES,
+    AuthMiddleware,
+)
 
 
 @pytest.fixture
@@ -26,6 +31,14 @@ def app():
     @_app.get("/api/v1/protected")
     async def protected(request: Request):
         return {"user": request.state.user.sub}
+
+    @_app.get("/simple/")
+    async def simple_root():
+        return {"index": "root"}
+
+    @_app.get("/simple/{package}/")
+    async def simple_package(package: str):
+        return {"index": package}
 
     return _app
 
@@ -50,6 +63,20 @@ class TestPublicPaths:
         assert "/api/v1/auth/login" in AUTH_PATHS
         assert "/api/v1/auth/register" in AUTH_PATHS
         assert "/api/v1/auth/refresh" in AUTH_PATHS
+
+    def test_simple_index_prefix_is_public(self):
+        # The PyPI Simple proxy must be reachable unauthenticated so uv/pip can
+        # resolve packages — the gateway authenticates to the index downstream.
+        assert "/simple/" in PUBLIC_PREFIXES
+
+    def test_simple_index_root_no_auth_required(self, client):
+        resp = client.get("/simple/")
+        assert resp.status_code == 200
+
+    def test_simple_package_page_no_auth_required(self, client):
+        resp = client.get("/simple/techneos-tools/")
+        assert resp.status_code == 200
+        assert resp.json()["index"] == "techneos-tools"
 
 
 class TestOptionsRequests:

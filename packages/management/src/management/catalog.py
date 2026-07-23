@@ -21,6 +21,8 @@ from management.registration import (
     build_image_and_record,
     find_resource_by_slug,
     publish_wheel_and_record,
+    upload_wheel_to_gateway,
+    upload_image_to_gateway,
     read_package_meta,
 )
 
@@ -121,11 +123,15 @@ def register_pypi_tool(
     skip_build: bool = False,
     skip_publish: bool = False,
     upsert: bool = False,
+    use_gateway: bool = True,
 ) -> tuple[str, str]:
     """Register a pypi-delivered tool end-to-end.
 
     Upsert the Tool, publish+record the wheel (skipped with ``--skip-build``), then
     create the pypi ``ToolVersion``. Returns ``(tool_id, version_id)``.
+
+    When ``use_gateway`` is True (default), the wheel is uploaded to the gateway
+    which handles index publishing. When False, uses direct publish (legacy).
     """
     package_dir = Path(package_dir)
     meta = read_package_meta(package_dir)
@@ -133,10 +139,15 @@ def register_pypi_tool(
         session, tool_def, package_dir, tool_type=tool_def.get("tool_type", "pypi"), upsert=upsert
     )
     if not skip_build:
-        version = publish_wheel_and_record(
-            session, package_dir, origin="catalog", entry_point=meta.entry_point,
-            publish=not skip_publish,
-        )
+        if use_gateway:
+            version = upload_wheel_to_gateway(
+                session, package_dir, origin="catalog", entry_point=meta.entry_point,
+            )
+        else:
+            version = publish_wheel_and_record(
+                session, package_dir, origin="catalog", entry_point=meta.entry_point,
+                publish=not skip_publish,
+            )
     else:
         version = meta.version
         print(f"  Package version: {version} (--skip-build)")
@@ -351,6 +362,7 @@ def register_container_tool(
     skip_build: bool = False,
     skip_push: bool = False,
     upsert: bool = False,
+    use_gateway: bool = True,
 ) -> tuple[str, str]:
     """Register a container-delivered tool end-to-end.
 
@@ -361,6 +373,9 @@ def register_container_tool(
     ``docker_image`` stored on the version is the env-resolved reference
     (``{repo}/<slug>`` — full ECR URL for prod, bare ``techneos/<slug>`` for local),
     which is what the worker pulls.
+
+    When ``use_gateway`` is True (default), the image is uploaded to the gateway
+    which handles registry pushing. When False, uses direct push (legacy).
     """
     package_dir = Path(package_dir)
     meta = read_package_meta(package_dir)
@@ -374,10 +389,16 @@ def register_container_tool(
 
     # Build + push + record the image (recorded before the version — tool-version
     # creation is hard-validated against the inventory).
-    image_ref = build_image_and_record(
-        session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
-        build_image=meta.docker_image, skip_build=skip_build, skip_push=skip_push,
-    )
+    if use_gateway:
+        image_ref = upload_image_to_gateway(
+            session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
+            build_image=meta.docker_image,
+        )
+    else:
+        image_ref = build_image_and_record(
+            session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
+            build_image=meta.docker_image, skip_build=skip_build, skip_push=skip_push,
+        )
 
     body = {
         "docker_image": image_ref,
@@ -402,6 +423,7 @@ def register_app(
     skip_push: bool = False,
     skip_deploy: bool = False,
     upsert: bool = False,
+    use_gateway: bool = True,
 ) -> str:
     """Register an embedded App: build + push + record the image (the same mechanism
     as container tools), upsert the App row, and trigger a deploy.
@@ -411,13 +433,21 @@ def register_app(
     isn't hard-validated). On an existing row the image/tag are PATCHed; ``--upsert``
     recreates. ``version`` is the image tag (an app's source of truth is package.json,
     not pyproject.toml). Returns the app id.
+
+    When ``use_gateway`` is True (default), the image is uploaded to the gateway
+    which handles registry pushing. When False, uses direct push (legacy).
     """
     package_dir = Path(package_dir)
     slug = app_def["slug"]
-    image_ref = build_image_and_record(
-        session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
-        skip_build=skip_build, skip_push=skip_push, fatal=False,
-    )
+    if use_gateway:
+        image_ref = upload_image_to_gateway(
+            session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
+        )
+    else:
+        image_ref = build_image_and_record(
+            session, slug=slug, package_dir=package_dir, version=version, origin="catalog",
+            skip_build=skip_build, skip_push=skip_push, fatal=False,
+        )
 
     existing = recreate_or_get(session, "apps", slug, upsert=upsert)
     if existing is not None:
@@ -455,6 +485,7 @@ def register_agent(
     skip_build: bool = False,
     skip_publish: bool = False,
     upsert: bool = False,
+    use_gateway: bool = True,
 ) -> str:
     """Register a wheel-delivered agent end-to-end.
 
@@ -462,14 +493,22 @@ def register_agent(
     ``package_config``: PATCH ``model_config``+``package_config`` on an existing row
     (so portal edits to system_prompt/tags aren't clobbered); ``--upsert`` forces a
     full replace. Returns the agent id.
+
+    When ``use_gateway`` is True (default), the wheel is uploaded to the gateway
+    which handles index publishing. When False, uses direct publish (legacy).
     """
     package_dir = Path(package_dir)
     meta = read_package_meta(package_dir)
     if not skip_build:
-        version = publish_wheel_and_record(
-            session, package_dir, origin="catalog", entry_point=meta.entry_point,
-            publish=not skip_publish,
-        )
+        if use_gateway:
+            version = upload_wheel_to_gateway(
+                session, package_dir, origin="catalog", entry_point=meta.entry_point,
+            )
+        else:
+            version = publish_wheel_and_record(
+                session, package_dir, origin="catalog", entry_point=meta.entry_point,
+                publish=not skip_publish,
+            )
     else:
         version = meta.version
         print(f"  Package version: {version} (--skip-build)")

@@ -271,12 +271,12 @@ def build_gateway_openapi(app: FastAPI) -> dict[str, Any]:
     # icons stay accurate. Mirrors the middleware's own test, prefixes included —
     # matching only the exact paths would leave a lock on endpoints that take no
     # token, which is the misdirection the lock icon exists to prevent.
-    from gateway.middleware.auth import AUTH_PATHS, PUBLIC_PATHS, PUBLIC_PREFIXES
+    from gateway.middleware.auth import AUTH_PATHS, PUBLIC_PATHS
 
     components.setdefault("securitySchemes", {}).update(_SECURITY_SCHEMES)
     schema["security"] = [{"HTTPBearer": []}]
     for path, item in paths.items():
-        if not (path in PUBLIC_PATHS or path in AUTH_PATHS or path.startswith(PUBLIC_PREFIXES)):
+        if not (path in PUBLIC_PATHS or path in AUTH_PATHS):
             continue
         for method, operation in item.items():
             if method.lower() in _HTTP_METHODS and isinstance(operation, dict):

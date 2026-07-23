@@ -90,7 +90,7 @@ Each deployment serves its own `techneos-cli` wheel, so users install the client
 from the platform they use rather than from a public index:
 
 ```bash
-pipx install --index-url https://<platform-host>/cli/simple/ techneos-cli
+pipx install --index-url https://<platform-host>/simple/ techneos-cli
 techneos config set-url https://<platform-host>   # or pass --url to `auth login`
 techneos auth login
 ```
@@ -98,22 +98,19 @@ techneos auth login
 `techneos config show` reports which platform the CLI points at and whether
 you're logged in; the settings live in `~/.techneos/config.json`.
 
-`/cli/simple/` is a [PEP 503](https://peps.python.org/pep-0503/) index and needs
+`/simple/` is a [PEP 503](https://peps.python.org/pep-0503/) index and needs
 no authentication — a user has to install the client before they can log in. It
-serves `techneos-cli` itself and forwards everything else to PyPI, so it works as
-the client's only `--index-url`. `GET /cli/version` reports the version on offer.
+serves `techneos-cli` and other platform wheels, and forwards everything else
+to PyPI, so it works as the client's only `--index-url`.
 
-Because the wheel ships inside the gateway image, a fresh install always matches
-the platform it came from. If a platform is later upgraded under an existing
+Because the wheel is published to the platform's index, a fresh install always
+matches the platform version. If a platform is later upgraded under an existing
 client, the client sends its version on every request and the gateway answers
 with a warning naming the exact reinstall command. Compatibility follows semver:
 before 1.0 a minor bump is treated as breaking, after it only a major bump is.
 
-Locally, `make build-cli-wheel` produces the wheel the gateway serves; without it
-`/cli/simple/` returns a 404 saying so. Local builds are stamped with the commit
-they came from (`0.1.0+g1a2b3c4`), so each one is a version pip and uv haven't
-cached and a plain `pip install --upgrade` picks up your rebuild. Release wheels,
-built by the gateway image, carry the plain version.
+Locally, `bin/wheel-release.sh cli` builds and publishes the CLI wheel; without it
+`/simple/techneos-cli/` returns a 404 saying so.
 
 ## Testing
 

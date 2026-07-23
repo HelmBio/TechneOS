@@ -40,7 +40,7 @@ class TestCompatibilityWarning:
     def test_warning_uses_the_callers_own_url(self):
         # The fix has to be copy-pasteable, so it names the real host.
         warning = compatibility_warning("0.2.0", "0.1.0", base_url="https://techneos.acme.com/")
-        assert "https://techneos.acme.com/cli/simple/" in warning
+        assert "https://techneos.acme.com/simple/" in warning
         assert "<platform-url>" not in warning
 
     def test_warning_falls_back_to_a_placeholder(self):

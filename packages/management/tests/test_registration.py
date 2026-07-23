@@ -1,6 +1,6 @@
 """Unit tests for the single-source package-index derivation in
 ``management.registration``: a catalog repo configures only
-``PLATFORM_PYTHON_PACKAGE_INDEX`` / ``UV_DEFAULT_INDEX`` and the wheel publish URL, the
+``PYTHON_PACKAGE_INDEX_URL`` / ``UV_DEFAULT_INDEX`` and the wheel publish URL, the
 CodeArtifact token coordinates, and the ECR registry are derived from it.
 Explicit env vars still win so the monorepo deploy is unchanged.
 """
@@ -42,7 +42,7 @@ DEVPI_INDEX = "http://localhost:3141/simple/"
 def _clear_index_env(monkeypatch):
     # Start each test from a clean slate — no inherited build/publish config.
     for var in (
-        "PLATFORM_PYTHON_PACKAGE_INDEX", "UV_DEFAULT_INDEX", "PYTHON_PACKAGE_PUBLISH_URL",
+        "PYTHON_PACKAGE_INDEX_URL", "UV_DEFAULT_INDEX", "PYTHON_PACKAGE_PUBLISH_URL",
         "PYTHON_PACKAGE_USERNAME", "PYTHON_PACKAGE_PASSWORD",
         "CODEARTIFACT_DOMAIN", "CODEARTIFACT_DOMAIN_OWNER",
         "AWS_ACCOUNT_ID", "AWS_REGION",
@@ -51,7 +51,7 @@ def _clear_index_env(monkeypatch):
 
 
 def test_package_index_url_prefers_techneos_var(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", CA_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", CA_INDEX)
     monkeypatch.setenv("UV_DEFAULT_INDEX", DEVPI_INDEX)
     assert package_index_url() == CA_INDEX
 
@@ -90,21 +90,21 @@ def test_parse_codeartifact_coords():
 
 
 def test_publish_url_derived_from_index_devpi(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", DEVPI_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", DEVPI_INDEX)
     publish_url, username, password = resolve_publish_credentials()
     assert publish_url == "http://localhost:3141/"
     assert (username, password) == ("devpi", "devpi")
 
 
 def test_publish_url_explicit_override_wins(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", DEVPI_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", DEVPI_INDEX)
     monkeypatch.setenv("PYTHON_PACKAGE_PUBLISH_URL", "http://other:3141/")
     publish_url, _, _ = resolve_publish_credentials()
     assert publish_url == "http://other:3141/"
 
 
 def test_ecr_registry_derived_from_index(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", CA_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", CA_INDEX)
     assert (
         resolve_ecr_registry("prod")
         == "123456789012.dkr.ecr.us-east-1.amazonaws.com"
@@ -112,7 +112,7 @@ def test_ecr_registry_derived_from_index(monkeypatch):
 
 
 def test_ecr_registry_explicit_override_wins(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", CA_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", CA_INDEX)
     monkeypatch.setenv("AWS_ACCOUNT_ID", "999999999999")
     monkeypatch.setenv("AWS_REGION", "eu-west-1")
     assert (
@@ -121,7 +121,7 @@ def test_ecr_registry_explicit_override_wins(monkeypatch):
 
 
 def test_ecr_registry_none_for_local(monkeypatch):
-    monkeypatch.setenv("PLATFORM_PYTHON_PACKAGE_INDEX", DEVPI_INDEX)
+    monkeypatch.setenv("PYTHON_PACKAGE_INDEX_URL", DEVPI_INDEX)
     assert resolve_ecr_registry("local") is None
 
 

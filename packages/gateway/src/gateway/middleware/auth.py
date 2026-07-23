@@ -25,10 +25,14 @@ PUBLIC_PATHS = {
     "/openapi.json",
 }
 
-# Prefixes that don't require authentication. Separate from the exact matches
-# above because these serve versioned filenames. /cli/ distributes the client
-# wheel, which a customer necessarily fetches before they can authenticate.
-PUBLIC_PREFIXES = ("/cli/",)
+# Path prefixes that don't require authentication. The PyPI Simple API proxy
+# (/simple/*) must be reachable unauthenticated so uv/pip can resolve packages
+# directly from the gateway URL — the gateway injects its own index credentials
+# downstream (see routes/artifacts.py). Matched by prefix because the index has
+# per-package and per-file subpaths (/simple/<pkg>/, /simple/<pkg>/<file>).
+PUBLIC_PREFIXES = (
+    "/simple/",
+)
 
 # Auth paths that handle their own authentication
 AUTH_PATHS = {

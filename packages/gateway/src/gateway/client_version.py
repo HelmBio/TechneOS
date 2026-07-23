@@ -1,6 +1,6 @@
 """Client/platform version-skew detection.
 
-The CLI is distributed from this gateway (``/cli/simple/``), so a freshly
+The CLI is distributed from this gateway (``/simple/``), so a freshly
 installed client always matches. Skew appears later, when the platform is
 upgraded underneath a client that was installed against an older release.
 """
@@ -54,7 +54,7 @@ def compatibility_warning(
     if not incompatible:
         return ""
 
-    index = f"{base_url.rstrip('/')}/cli/simple/" if base_url else "<platform-url>/cli/simple/"
+    index = f"{base_url.rstrip('/')}/simple/" if base_url else "<platform-url>/simple/"
     return (
         f"techneos-cli {client_version} does not match platform {platform_version}. "
         f"Reinstall the matching client: "
