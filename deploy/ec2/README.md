@@ -35,13 +35,13 @@ are minted from it per use.
 | AWS resource | What it's for | `.env.prod` keys | Example value |
 |--------------|---------------|------------------|---------------|
 | **EC2 instance** | runs the whole stack | `SSH_HOST` (+ `SSH_USER`, `SSH_KEY_PATH`, `SSH_PORT`) | `ec2-1-2-3-4.compute.amazonaws.com` |
-| **ECR registry** | holds the 11 platform images | `IMAGE_REGISTRY` (region auto-derived from its host) | `111122223333.dkr.ecr.us-east-1.amazonaws.com` |
-| **ECR repos** `techneos/*` | one per image (gateway, the 8 services, portal, tool-runtime) | — (addressed as `$IMAGE_REGISTRY/techneos/<name>`; create the repos, no key) | `techneos/gateway`, `techneos/portal`, … |
+| **ECR registry** | holds the 11 platform images | `DOCKER_IMAGE_REGISTRY` (region auto-derived from its host) | `111122223333.dkr.ecr.us-east-1.amazonaws.com` |
+| **ECR repos** `techneos/*` | one per image (gateway, the 8 services, portal, tool-runtime) | — (addressed as `$DOCKER_IMAGE_REGISTRY/techneos/<name>`; create the repos, no key) | `techneos/gateway`, `techneos/portal`, … |
 | **CodeArtifact repo** | Python index for catalog tool/agent installs | `PYTHON_PACKAGE_INDEX_URL`, `PYTHON_PACKAGE_PUBLISH_URL` | `https://<domain>-<account>.d.codeartifact.<region>.amazonaws.com/pypi/<repo>/simple/` (index) and `…/pypi/<repo>/` (publish) |
 | **IAM instance role** | ECR pull + CodeArtifact token minting, from the instance | — (attached to the instance; **not** an env var) | see policy below |
 
-`IMAGE_REGISTRY` is the registry host with **no** repo path or trailing slash;
-the images live under `$IMAGE_REGISTRY/techneos/<name>`, each tagged with its own
+`DOCKER_IMAGE_REGISTRY` is the registry host with **no** repo path or trailing slash;
+the images live under `$DOCKER_IMAGE_REGISTRY/techneos/<name>`, each tagged with its own
 package version. For ECR the region is derived from that host, so you don't set
 `AWS_REGION`; for a non-ECR registry set it to your region (defaults to
 `us-east-1`). The two CodeArtifact URLs differ only by the trailing `simple/`:
@@ -52,9 +52,13 @@ The **IAM instance role** needs, at minimum:
 
 ```
 ecr:GetAuthorizationToken, ecr:BatchGetImage, ecr:GetDownloadUrlForLayer
-codeartifact:GetAuthorizationToken, codeartifact:ReadFromRepository
+codeartifact:GetAuthorizationToken, codeartifact:ReadFromRepository, codeartifact:ListPackages
 sts:GetServiceBearerToken
 ```
+
+`codeartifact:ListPackages` backs the gateway's synthesized `/simple/` root
+index (CodeArtifact doesn't serve the PEP 503 root listing); the read/token
+actions cover the per-package pages and wheel downloads.
 
 `PYTHON_PACKAGE_INDEX_URL` is a **credential-free base URL** — no token in the
 file, nothing to rotate. The Airflow worker mints a CodeArtifact token from the

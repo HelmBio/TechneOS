@@ -46,7 +46,7 @@ rm -rf "$REMOTE_DIR/deploy" "$REMOTE_DIR/packages" "$REMOTE_DIR/setup"
 tar xzf "$BUNDLE" -C "$REMOTE_DIR"
 chmod 600 "$ENV_FILE"
 
-IMAGE_REGISTRY="$(_envval IMAGE_REGISTRY)"
+DOCKER_IMAGE_REGISTRY="$(_envval DOCKER_IMAGE_REGISTRY)"
 AWS_REGION="$(_envval AWS_REGION)"; AWS_REGION="${AWS_REGION:-us-east-1}"
 API_HOST="$(_host_of "$(_envval PLATFORM_API_URL)")"
 PORTAL_HOST="$(_host_of "$(_envval PLATFORM_PORTAL_URL)")"
@@ -58,11 +58,11 @@ CERTBOT_EMAIL="$(_envval CERTBOT_EMAIL)"
 # token in a clean plaintext config (no host credential helper to break its
 # "store" step), and the pull below reuses it. A non-ECR registry is assumed
 # already logged in.
-if [[ "$IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
+if [[ "$DOCKER_IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
   echo "=== Logging into ECR ==="
   if ! aws ecr get-login-password --region "$AWS_REGION" \
-       | docker login --username AWS --password-stdin "$IMAGE_REGISTRY"; then
-    echo "ERROR: could not authenticate to ECR ($IMAGE_REGISTRY)." >&2
+       | docker login --username AWS --password-stdin "$DOCKER_IMAGE_REGISTRY"; then
+    echo "ERROR: could not authenticate to ECR ($DOCKER_IMAGE_REGISTRY)." >&2
     echo "  The instance IAM role needs ecr:GetAuthorizationToken in $AWS_REGION," >&2
     echo "  and the pull needs ecr:BatchGetImage + ecr:GetDownloadUrlForLayer on the repos." >&2
     exit 1

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Delete EVERY image from all ECR repositories named "<prefix>*" (default
-# "techneos/") in one region, leaving the now-empty repositories in place.
+# Delete every image from ECR repositories in one region, leaving the now-empty
+# repositories in place. By default clears ALL repos named "<prefix>*" (prefix
+# defaults to "techneos/"); pass a REPO name to clear just that one — useful for
+# republishing a single service's {version} tag after a code fix without bumping
+# the version (e.g. clear techneos/gateway, then re-run build-and-push.sh).
 #
 # WHY keep the repos: `docker push` to ECR does not auto-create a repository, so
 # deleting the repos would break the next build-and-push.sh. Emptying them is
@@ -13,11 +16,15 @@ set -euo pipefail
 # the target account. It touches ONLY the registry, never the running instance.
 #
 #   Usage:
-#     deploy/ec2/clear-ecr-images.sh [--region R] [--prefix P] [--yes] [--dry-run]
+#     deploy/ec2/clear-ecr-images.sh [REPO] [--region R] [--prefix P] [--yes] [--dry-run]
 #
+#     REPO          Repository to clear, given without the prefix (e.g. "gateway"
+#                   for techneos/gateway; the prefix is added if you omit it).
+#                   Default: "all" — every repository under --prefix.
 #     --region R    ECR region. Default: AWS_REGION env, else the region parsed
-#                   from IMAGE_REGISTRY in deploy/ec2/.env.prod, else us-east-1.
-#     --prefix P    Repository-name prefix to match. Default: techneos/
+#                   from DOCKER_IMAGE_REGISTRY in deploy/ec2/.env.prod, else us-east-1.
+#     --prefix P    Repository-name prefix to match, and prepended to REPO.
+#                   Default: techneos/
 #     --yes, -y     Skip the confirmation prompt (for non-interactive use).
 #     --dry-run     List what would be deleted and exit without deleting.
 
@@ -26,15 +33,19 @@ ENV_FILE="${ENV_FILE:-$HERE/.env.prod}"
 
 usage() {
   cat <<'EOF'
-Delete every image from all ECR repositories named "<prefix>*" (default
-"techneos/") in one region, keeping the now-empty repositories in place.
+Delete every image from ECR repositories in one region, keeping the now-empty
+repositories in place. Clears all repos named "<prefix>*" (prefix defaults to
+"techneos/"), or just one if a REPO name is given.
 
 Usage:
-  deploy/ec2/clear-ecr-images.sh [--region R] [--prefix P] [--yes] [--dry-run]
+  deploy/ec2/clear-ecr-images.sh [REPO] [--region R] [--prefix P] [--yes] [--dry-run]
 
+  REPO          Repository to clear, given without the prefix (e.g. "gateway"
+                for techneos/gateway; the prefix is added if you omit it).
+                Default: "all" — every repository under --prefix.
   --region R    ECR region. Default: AWS_REGION env, else the region parsed
-                from IMAGE_REGISTRY in deploy/ec2/.env.prod, else us-east-1.
-  --prefix P    Repository-name prefix to match. Default: techneos/
+                from DOCKER_IMAGE_REGISTRY in deploy/ec2/.env.prod, else us-east-1.
+  --prefix P    Repository-name prefix to match, and prepended to REPO. Default: techneos/
   --yes, -y     Skip the confirmation prompt (for non-interactive use).
   --dry-run     List what would be deleted and exit without deleting.
 EOF
@@ -42,8 +53,10 @@ EOF
 
 PREFIX="techneos/"
 REGION="${AWS_REGION:-}"
+REPO="all"
 ASSUME_YES=0
 DRY_RUN=0
+_repo_set=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,7 +65,10 @@ while [ $# -gt 0 ]; do
     --yes|-y) ASSUME_YES=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    -*) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *)
+      [ "$_repo_set" -eq 0 ] || { echo "ERROR: unexpected extra argument: $1" >&2; usage >&2; exit 2; }
+      REPO="$1"; _repo_set=1; shift ;;
   esac
 done
 
@@ -66,12 +82,25 @@ _envval() {
 # Region: flag/env already in REGION; else derive from the ECR host in .env.prod;
 # else us-east-1. The ECR hostname names its own region authoritatively.
 if [ -z "$REGION" ]; then
-  _reg="$(_envval IMAGE_REGISTRY)"
+  _reg="$(_envval DOCKER_IMAGE_REGISTRY)"
   if [[ "$_reg" == *.dkr.ecr.*.amazonaws.com* ]]; then
     REGION="$(printf '%s' "$_reg" | sed -E 's#.*\.dkr\.ecr\.([^.]+)\.amazonaws\.com.*#\1#')"
   fi
 fi
 REGION="${REGION:-us-east-1}"
+
+# Resolve the name filter. "all" matches every repo under $PREFIX; a specific
+# REPO matches exactly one — the $PREFIX is prepended unless you already included
+# it, so both "gateway" and "techneos/gateway" name techneos/gateway.
+if [ "$REPO" = "all" ]; then
+  SCOPE="${PREFIX}*"
+else
+  case "$REPO" in
+    "$PREFIX"*) TARGET="$REPO" ;;
+    *)          TARGET="${PREFIX}${REPO}" ;;
+  esac
+  SCOPE="$TARGET"
+fi
 
 command -v aws >/dev/null 2>&1 || { echo "ERROR: aws CLI not found" >&2; exit 1; }
 
@@ -79,26 +108,31 @@ command -v aws >/dev/null 2>&1 || { echo "ERROR: aws CLI not found" >&2; exit 1;
 # the main hazard here, so make it visible before anything is removed.
 echo "=== Target ==="
 echo "  Region:  $REGION"
-echo "  Prefix:  $PREFIX"
+echo "  Scope:   $SCOPE"
 CALLER="$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null || true)"
 echo "  Caller:  ${CALLER:-<could not resolve — check credentials>}"
 [ -n "$CALLER" ] || { echo "ERROR: no usable AWS credentials for this shell." >&2; exit 1; }
 
-# Enumerate matching repositories. Filter in the shell (a JMESPath literal can't
-# take a shell variable cleanly).
-# Read into an array with a while-read loop rather than `mapfile` — the latter is
-# Bash 4+, and macOS ships Bash 3.2, which this workstation tool must run on.
+# Match the repository name(s) in the shell (a JMESPath literal can't take a
+# shell variable cleanly): a prefix match for "all", an exact match otherwise.
+_match() {
+  if [ "$REPO" = "all" ]; then grep "^${PREFIX}"; else grep -Fx "$TARGET"; fi
+}
+
+# Enumerate matching repositories. Read into an array with a while-read loop
+# rather than `mapfile` — the latter is Bash 4+, and macOS ships Bash 3.2, which
+# this workstation tool must run on.
 REPOS=()
 while IFS= read -r _r; do
   [ -n "$_r" ] && REPOS+=("$_r")
 done < <(
   aws ecr describe-repositories --region "$REGION" \
       --query 'repositories[].repositoryName' --output text 2>/dev/null \
-    | tr '\t' '\n' | grep "^${PREFIX}" | sort || true
+    | tr '\t' '\n' | _match | sort || true
 )
 
 if [ "${#REPOS[@]}" -eq 0 ]; then
-  echo "=== No repositories match '${PREFIX}*' in $REGION — nothing to do. ==="
+  echo "=== No repositories match '${SCOPE}' in $REGION — nothing to do. ==="
   exit 0
 fi
 

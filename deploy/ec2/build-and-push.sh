@@ -16,7 +16,7 @@ set -euo pipefail
 # PLATFORM_API_URL. A runtime env var cannot change it.
 #
 #   Usage:  deploy/ec2/build-and-push.sh
-#           (reads deploy/ec2/.env.prod for IMAGE_REGISTRY, PLATFORM_API_URL,
+#           (reads deploy/ec2/.env.prod for DOCKER_IMAGE_REGISTRY, PLATFORM_API_URL,
 #            ...; each image is tagged with its own package version)
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,18 +41,18 @@ _envval() {
   printf '%s' "$v"
 }
 
-IMAGE_REGISTRY="${IMAGE_REGISTRY:-$(_envval IMAGE_REGISTRY)}"
+DOCKER_IMAGE_REGISTRY="${DOCKER_IMAGE_REGISTRY:-$(_envval DOCKER_IMAGE_REGISTRY)}"
 AWS_REGION="${AWS_REGION:-$(_envval AWS_REGION)}"
 PLATFORM_API_URL="${PLATFORM_API_URL:-$(_envval PLATFORM_API_URL)}"
 PLATFORM_SITE_NAME="${PLATFORM_SITE_NAME:-$(_envval PLATFORM_SITE_NAME)}"
 PLATFORM_SITE_TAGLINE="${PLATFORM_SITE_TAGLINE:-$(_envval PLATFORM_SITE_TAGLINE)}"
 
 # Fail fast, together, on what the build can't proceed without. A <placeholder>
-# counts as unset. IMAGE_REGISTRY is the push target; PLATFORM_API_URL is inlined
+# counts as unset. DOCKER_IMAGE_REGISTRY is the push target; PLATFORM_API_URL is inlined
 # into the portal bundle at build time, so it must be real. There is no global
 # IMAGE_TAG — each image is tagged with its own package version.
 _missing=()
-case "${IMAGE_REGISTRY:-}"   in ""|*"<"*) _missing+=("IMAGE_REGISTRY") ;; esac
+case "${DOCKER_IMAGE_REGISTRY:-}"   in ""|*"<"*) _missing+=("DOCKER_IMAGE_REGISTRY") ;; esac
 case "${PLATFORM_API_URL:-}" in ""|*"<"*) _missing+=("PLATFORM_API_URL") ;; esac
 if [ "${#_missing[@]}" -gt 0 ]; then
   echo "ERROR: required build variables are unset or still <placeholders>" >&2
@@ -66,22 +66,22 @@ fi
 # the region (<account>.dkr.ecr.<region>.amazonaws.com) — authoritative, since a
 # token minted for another region won't authenticate here — so derive it. For
 # non-ECR registries fall back to the env value, then us-east-1.
-if [[ "$IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
-  AWS_REGION="$(printf '%s' "$IMAGE_REGISTRY" | sed -E 's#.*\.dkr\.ecr\.([^.]+)\.amazonaws\.com.*#\1#')"
+if [[ "$DOCKER_IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
+  AWS_REGION="$(printf '%s' "$DOCKER_IMAGE_REGISTRY" | sed -E 's#.*\.dkr\.ecr\.([^.]+)\.amazonaws\.com.*#\1#')"
 fi
 AWS_REGION="${AWS_REGION:-us-east-1}"
 
-echo "=== Registry: $IMAGE_REGISTRY ==="
+echo "=== Registry: $DOCKER_IMAGE_REGISTRY ==="
 
 # Registry login. ECR needs a minted token; anything else (GHCR, …) is assumed
 # already logged in — the one ECR-specific step, gated so a registry switch
 # needs no change here beyond a prior `docker login`.
-if [[ "$IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
+if [[ "$DOCKER_IMAGE_REGISTRY" == *.dkr.ecr.*.amazonaws.com* ]]; then
   echo "=== Logging into ECR ==="
   aws ecr get-login-password --region "$AWS_REGION" \
-    | docker login --username AWS --password-stdin "$IMAGE_REGISTRY"
+    | docker login --username AWS --password-stdin "$DOCKER_IMAGE_REGISTRY"
 else
-  echo "=== Non-ECR registry — assuming 'docker login $IMAGE_REGISTRY' already done ==="
+  echo "=== Non-ECR registry — assuming 'docker login $DOCKER_IMAGE_REGISTRY' already done ==="
 fi
 
 # Tags come from committed history — warn if the tree is dirty, since local edits
@@ -110,7 +110,7 @@ build_one() {
   rev="$(service_revision "$revpaths")"
   [ -n "$version" ] || { echo "ERROR: no version found in $manifest" >&2; exit 1; }
   [ -n "$rev" ]     || { echo "ERROR: cannot compute a git revision for $name (not a checkout?)" >&2; exit 1; }
-  target="$IMAGE_REGISTRY/techneos/$name"
+  target="$DOCKER_IMAGE_REGISTRY/techneos/$name"
 
   if tag_exists "$target:$version-$rev"; then
     echo "=== $name: $version-$rev already published — skipping ==="
@@ -151,4 +151,4 @@ for _row in "${PLATFORM_IMAGES[@]}"; do
   build_one "$_name" "$_manifest" "$_dockerfile" "$_context" "$_revpaths"
 done
 
-echo "=== Build complete → $IMAGE_REGISTRY ==="
+echo "=== Build complete → $DOCKER_IMAGE_REGISTRY ==="

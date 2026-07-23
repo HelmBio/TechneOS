@@ -309,7 +309,7 @@ services:
       # host — both names describe the same directory.
       TECHNEOS_SHARED_INPUT_DIR: /tmp/techneos-shared-inputs
       TECHNEOS_HOST_SHARED_INPUT_DIR: ${TECHNEOS_HOST_SHARED_INPUT_DIR:-/data/techneos/airflow-inputs}
-      TECHNEOS_RUNTIME_IMAGE: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY in .env}/techneos/tool-runtime
+      TECHNEOS_RUNTIME_IMAGE: ${DOCKER_IMAGE_REGISTRY:?set DOCKER_IMAGE_REGISTRY in .env}/techneos/tool-runtime
       TECHNEOS_RUNTIME_IMAGE_TAG: ${TOOL_RUNTIME_IMAGE_TAG:?set by deploy.sh}
       # Credential-free base URL. The worker mints a CodeArtifact token per
       # install from the instance role; nothing is stored here.
@@ -333,7 +333,7 @@ services:
   # ── Platform services ──────────────────────────────────────────────────────
   gateway:
     <<: *service
-    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY in .env}/techneos/gateway:${GATEWAY_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY:?set DOCKER_IMAGE_REGISTRY in .env}/techneos/gateway:${GATEWAY_IMAGE_TAG:?set by deploy.sh}
     # remote-deploy.sh runs the in-container seed (migrations/seed/seed.py) in
     # this container, and it reads the DEFAULT_*/DEFAULT_LLM_* overrides to create
     # the admin and the default LLM provider. Load the deployed .env so seed sees
@@ -349,7 +349,7 @@ services:
 
   auth-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/auth-service:${AUTH_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/auth-service:${AUTH_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env, *service-urls, *keycloak-env]
     # The admin "Infrastructure" page reads container status + logs through the
@@ -362,7 +362,7 @@ services:
 
   dataset-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/dataset-service:${DATASET_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/dataset-service:${DATASET_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env]
     ports:
@@ -370,7 +370,7 @@ services:
 
   tool-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/tool-service:${TOOL_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/tool-service:${TOOL_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env, *airflow-client-env]
       PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
@@ -379,7 +379,7 @@ services:
 
   pipeline-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/pipeline-service:${PIPELINE_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/pipeline-service:${PIPELINE_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env, *airflow-client-env]
       TOOL_SERVICE_URL: http://tool-service:8003
@@ -389,7 +389,7 @@ services:
 
   agent-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/agent-service:${AGENT_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/agent-service:${AGENT_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env]
       GATEWAY_URL: http://gateway:8000
@@ -400,7 +400,7 @@ services:
 
   notification-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/notification-service:${NOTIFICATION_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/notification-service:${NOTIFICATION_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: *platform-env
     ports:
@@ -408,7 +408,7 @@ services:
 
   app-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/app-service:${APP_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/app-service:${APP_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *keycloak-env]
       APP_DEPLOYER_BACKEND: ${APP_DEPLOYER_BACKEND:-docker}
@@ -424,7 +424,7 @@ services:
 
   task-service:
     <<: *service
-    image: ${IMAGE_REGISTRY}/techneos/task-service:${TASK_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/task-service:${TASK_SERVICE_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: [*platform-env, *minio-env]
       NOTIFICATION_SERVICE_URL: http://notification-service:8006
@@ -435,7 +435,7 @@ services:
   # is specific to one deployment's API URL — see deploy/build-and-push.sh. The
   # value below only reaches server-side rendering.
   portal:
-    image: ${IMAGE_REGISTRY}/techneos/portal:${PORTAL_IMAGE_TAG:?set by deploy.sh}
+    image: ${DOCKER_IMAGE_REGISTRY}/techneos/portal:${PORTAL_IMAGE_TAG:?set by deploy.sh}
     restart: unless-stopped
     logging: *logging
     environment:
