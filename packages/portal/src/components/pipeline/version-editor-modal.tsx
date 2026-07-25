@@ -9,7 +9,7 @@ import {
   type PipelineWithVersions,
   type ToolWithVersions,
 } from "@/lib/api";
-import { SchemaParamControl } from "@/components/pipeline/param-field";
+import { SchemaParamControl, defaultForProp } from "@/components/pipeline/param-field";
 
 type StepBinding = {
   name: string;
@@ -250,7 +250,7 @@ export function PipelineVersionEditorModal({
                               onChange={() =>
                                 exposed
                                   ? setParam(i, key, undefined)
-                                  : setParam(i, key, def.default ?? null)
+                                  : setParam(i, key, defaultForProp(def))
                               }
                               className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />

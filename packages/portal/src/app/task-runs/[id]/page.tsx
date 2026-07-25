@@ -20,7 +20,7 @@ import {
   DataPanel,
   type DataPanelState,
 } from "@/components/task-run/data-panel";
-import { isActive, formatFileSize, downloadFile } from "@/lib/run-utils";
+import { isActive, isTerminal, formatFileSize, downloadFile } from "@/lib/run-utils";
 import { StatusBadge } from "@/components/run/status-badge";
 import { RunFileTable, type RunFile } from "@/components/run/run-file-table";
 
@@ -311,7 +311,7 @@ export default function AssignmentDetailPage() {
       assignment.status === "accepted" ||
       assignment.status === "in_progress") &&
     isAssignee;
-  const canCancel = assignment.status !== "terminal" && isCreator;
+  const canCancel = !isTerminal(assignment.status) && isCreator;
   // The holder (assignee/team member/project lead) delegates their own work.
   const canDelegate = canAccept || canSubmit || canDecline;
   // An admin can reassign any open run to another user — mirrors the admin

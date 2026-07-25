@@ -74,7 +74,6 @@ const sampleSteps: PipelineStepConfig[] = [
     tool_version: 1,
     parameters: { pH: 7.4 },
     depends_on: [],
-    resource_requirements: {},
   },
   {
     name: "dock",
@@ -82,7 +81,6 @@ const sampleSteps: PipelineStepConfig[] = [
     tool_version: 2,
     parameters: {},
     depends_on: ["prep"],
-    resource_requirements: {},
   },
 ];
 

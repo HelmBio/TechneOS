@@ -258,7 +258,7 @@ export default function ToolDetailPage() {
                               href={`/tool-runs/${r.id}`}
                               className="font-mono text-sm text-blue-600 hover:underline"
                             >
-                              {r.name || `${r.id.slice(0, 12)}...`}
+                              {`${r.id.slice(0, 12)}...`}
                             </Link>
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-600">

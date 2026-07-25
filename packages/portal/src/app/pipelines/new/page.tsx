@@ -18,7 +18,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { TOOL_CATEGORIES } from "@/lib/constants";
 import PipelineGraph from "@/components/pipeline-graph";
-import { SchemaParamControl } from "@/components/pipeline/param-field";
+import { SchemaParamControl, defaultForProp } from "@/components/pipeline/param-field";
 
 const PIPELINE_TYPES = ["compute", "interactive", "hybrid"];
 
@@ -1032,7 +1032,7 @@ function CreatePipelinePage() {
                               onChange={() =>
                                 exposed
                                   ? setStepParam(idx, key, undefined)
-                                  : setStepParam(idx, key, def.default ?? null)
+                                  : setStepParam(idx, key, defaultForProp(def))
                               }
                               className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />

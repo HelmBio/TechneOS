@@ -2,7 +2,25 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 
+import { collectDefaults } from "@/components/schema-form";
+
 type Schema = Record<string, unknown>;
+
+/**
+ * The value a parameter should take when first exposed: its declared default,
+ * or — for an object with nested properties — a recursively seeded default so
+ * the sub-form starts populated (matching the standalone run form) rather than
+ * empty. Everything else has no default, so it starts blank (`null`).
+ */
+export function defaultForProp(def: Schema): unknown {
+  if (def.default !== undefined) return def.default;
+  if (def.type === "object" && def.properties) {
+    return collectDefaults(
+      def.properties as Record<string, Record<string, unknown>>,
+    );
+  }
+  return null;
+}
 
 /**
  * Number/integer input that keeps its own text state so partial entries like
@@ -97,6 +115,46 @@ export function SchemaParamControl({
   const itemEnum = (propDef.items as { enum?: unknown[] } | undefined)?.enum;
   const multiEnumOpts =
     type === "array" && Array.isArray(itemEnum) ? (itemEnum as unknown[]) : [];
+
+  // object with nested properties → recursive sub-form, one labeled control per
+  // sub-property (e.g. autodock-vina's `search_box` → center_x/size_x/…). Without
+  // this the whole object collapsed to a single text input.
+  if (type === "object" && propDef.properties) {
+    const subProps = propDef.properties as Record<string, Schema>;
+    const objValue =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return (
+      <div className={`space-y-2 rounded-md border border-gray-200 p-2`}>
+        {Object.entries(subProps).map(([subName, subDef]) => {
+          const subLabel = (subDef.title as string) || subName;
+          return (
+            <div key={subName} className="block">
+              <span
+                className={`mb-0.5 block font-mono text-gray-600 ${
+                  compact ? "text-[11px]" : "text-xs"
+                }`}
+              >
+                {subLabel}
+              </span>
+              <SchemaParamControl
+                propDef={subDef}
+                value={objValue[subName]}
+                onChange={(v) => onChange({ ...objValue, [subName]: v })}
+                placeholder={
+                  subDef.default != null
+                    ? `default: ${String(subDef.default)}`
+                    : undefined
+                }
+                compact={compact}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   if (type === "boolean") {
     return (

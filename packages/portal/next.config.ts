@@ -29,13 +29,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   allowedDevOrigins,
   devIndicators: false,
-  // `next build` runs a project-wide tsc type-check + ESLint by default, which
-  // `next dev` does not. To keep the production image build as lenient as local
-  // dev we skip both here. NOTE: this is a temporary unblock — the real type
-  // errors should be fixed and a `next build`/tsc gate added to CI so they
-  // can't regress (see follow-up task).
-  typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
+  // `next build` runs a project-wide tsc type-check by default, which `next dev`
+  // does not. The tree is type-clean, so we let the build fail on regressions
+  // rather than shipping them. (Next 16 dropped the `eslint` build option;
+  // ESLint no longer runs during `next build`.)
   // Don't 308-strip the trailing slash before applying rewrites. The
   // embedded-App iframe loads /api/v1/apps/runtime/{slug}/ — that trailing
   // slash matters because app-service's runtime_proxy route is
