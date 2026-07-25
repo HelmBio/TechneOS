@@ -15,9 +15,10 @@ set -euo pipefail
 # wheel, or --skip-register to build and publish without recording in inventory.
 #
 # Version handling:
-#   - If version exists in index and --force: overwrites the existing version
-#   - If version exists in index and no --force: auto-bumps to {version}-{git}
-#     with a warning to bump the version in pyproject.toml
+#   - If the version already exists in the index: STOP and require a version bump.
+#     Published versions are immutable; re-releasing one leaves stale cached
+#     wheels/images. Bump `version` in the package's pyproject.toml and re-run.
+#   - --force: overwrite the existing version in place (discouraged).
 #
 # Examples:
 #   bin/wheel-release.sh cli                              # full release
@@ -47,15 +48,16 @@ Options:
   --env <local|prod>    Target environment (default: local)
   --skip-build          Skip build step, publish existing wheel
   --skip-register       Skip inventory registration
-  --force               Overwrite existing version in index (default: auto-bump)
+  --force               Overwrite an existing version (default: stop, require a bump)
   --reset               Clear wheels from index and delete compute_artifacts
   --upsert              Upsert existing artifact instead of creating new
   --help, -h            Show this help message
 
 Version handling:
-  If a version already exists in the index:
-  - Without --force: auto-bumps to {version}-{git_sha} with a warning
-  - With --force: overwrites the existing version
+  If the version already exists in the index, the release STOPS and asks you to
+  bump `version` in the package's pyproject.toml. Published versions are
+  immutable; re-releasing one leaves stale cached wheels/images.
+  --force overwrites the existing version in place (discouraged).
 
 Examples:
   bin/wheel-release.sh cli                              # build CLI wheel
@@ -127,15 +129,76 @@ resolve_package() {
       PKG_DIR="packages/tool-runtime"
       PKG_NAME="techneos-tool-runtime"
       ;;
+    aws-helper|techneos-aws)
+      PKG_DIR="packages/aws-helper"
+      PKG_NAME="techneos-aws"
+      ;;
     platform)
       PKG_DIR=""
       PKG_NAME="platform"
       ;;
     *)
       echo "Error: unknown package '$pkg'" >&2
-      echo "Known packages: cli, management, tool-runtime, platform" >&2
+      echo "Known packages: cli, management, tool-runtime, aws-helper, platform" >&2
       exit 2
       ;;
+  esac
+}
+
+# ── version pre-flight ───────────────────────────────────────────────────────
+# Published versions are immutable (a re-publish either auto-bumps to a junk
+# +sha version, or overwrites and leaves stale wheels/images that uv and docker
+# caches keep serving). So refuse to re-release an existing version: require a
+# bump. --force overrides (overwrite in place).
+
+_pkg_version() {  # $1 = pkg_dir → version from pyproject.toml
+  sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$1/pyproject.toml" | head -1
+}
+
+_version_published() {  # $1 = dist name, $2 = version → 0 if already on the index
+  local pkg="$1" ver="$2"
+  local publish_url="${PYTHON_PACKAGE_PUBLISH_URL:-}" index_url="${PYTHON_PACKAGE_INDEX_URL:-}"
+  if [[ "$publish_url" == *codeartifact* ]] || [[ "$index_url" == *codeartifact* ]]; then
+    command -v aws >/dev/null 2>&1 || return 1
+    aws codeartifact list-package-versions \
+      --domain "${CODEARTIFACT_DOMAIN:-}" --domain-owner "${CODEARTIFACT_DOMAIN_OWNER:-}" \
+      --repository "${CODEARTIFACT_REPOSITORY:-}" --format pypi \
+      --package "$pkg" --query 'versions[].version' --output text 2>/dev/null \
+      | tr '\t' '\n' | grep -qxF "$ver"
+  elif [ -n "$index_url" ]; then
+    # devpi/pypiserver: the /simple/<pkg>/ page lists the version's wheel/sdist.
+    local underscore="${pkg//-/_}"
+    curl -s "${index_url%/}/${pkg}/" 2>/dev/null \
+      | grep -qiE "(${pkg}|${underscore})-${ver}(-|\.)"
+  else
+    return 1  # no index we can query — fail open, don't block
+  fi
+}
+
+_require_version_bump_or_stop() {  # $1 = dist name, $2 = pkg_dir
+  local pkg="$1" ver
+  ver="$(_pkg_version "$2")"
+  [ -n "$ver" ] || return 0  # couldn't read the version — skip the check
+  if _version_published "$pkg" "$ver"; then
+    echo "Error: ${pkg}==${ver} is already published." >&2
+    echo "  Bump 'version' in ${2}/pyproject.toml and release the new version." >&2
+    echo "  (Published versions are immutable; re-releasing one leaves stale" >&2
+    echo "   cached wheels/images. Pass --force to overwrite anyway.)" >&2
+    exit 1
+  fi
+}
+
+_preflight_version_check() {
+  [ "$FORCE" = "yes" ] && return 0
+  case "$PKG_NAME" in
+    platform)
+      _require_version_bump_or_stop techneos-tool-runtime packages/tool-runtime
+      _require_version_bump_or_stop techneos-management   packages/management
+      _require_version_bump_or_stop techneos-cli          packages/cli
+      _require_version_bump_or_stop techneos-aws          packages/aws-helper
+      ;;
+    *)
+      _require_version_bump_or_stop "$PKG_NAME" "$PKG_DIR" ;;
   esac
 }
 
@@ -252,7 +315,13 @@ do_release() {
 
   validate_env "$env_file"
 
+  # Stop before building/publishing if the version already exists — bump instead.
+  _preflight_version_check
+
   if [ "$PKG_NAME" = "platform" ]; then
+    echo "=== Releasing techneos-aws ==="
+    uv run python setup/wheels/publish_aws_helper.py ${extra_args[@]+"${extra_args[@]}"}
+    echo
     echo "=== Releasing techneos-tool-runtime ==="
     uv run python setup/wheels/publish_tool_runtime.py \
       --skip-build --skip-push --publish-wheel ${extra_args[@]+"${extra_args[@]}"}
@@ -268,10 +337,18 @@ do_release() {
     echo "=== Releasing $PKG_NAME ==="
     uv run python setup/wheels/publish_cli.py ${extra_args[@]+"${extra_args[@]}"}
   else
-    local script="$REPO_ROOT/setup/wheels/publish_${PKG_DIR##*/}.py"
+    # Publish scripts are underscore-named (publish_tool_runtime.py), but the
+    # package dir is hyphenated (packages/tool-runtime) — normalise - → _.
+    local slug="${PKG_DIR##*/}"
+    local script="$REPO_ROOT/setup/wheels/publish_${slug//-/_}.py"
     if [ -f "$script" ]; then
       echo "=== Releasing $PKG_NAME ==="
-      uv run python "$script" ${extra_args[@]+"${extra_args[@]}"}
+      # tool-runtime uniquely ships both an image and a wheel. The publish script
+      # builds+pushes the image by default but only publishes the wheel with
+      # --publish-wheel, so a single-package release must opt in to get both.
+      local pkg_args=()
+      [ "$PKG_NAME" = "techneos-tool-runtime" ] && pkg_args+=(--publish-wheel)
+      uv run python "$script" ${pkg_args[@]+"${pkg_args[@]}"} ${extra_args[@]+"${extra_args[@]}"}
     else
       echo "Error: no publish script found at $script" >&2
       exit 1
@@ -329,10 +406,11 @@ with open('$token_file', 'w') as f:
   # Determine which packages to reset
   local packages=()
   case "$pkg" in
-    platform)   packages=(cli management tool-runtime) ;;
+    platform)   packages=(cli management tool-runtime aws-helper) ;;
     cli)        packages=(cli) ;;
     management) packages=(management) ;;
     tool-runtime) packages=(tool-runtime) ;;
+    aws-helper) packages=(aws-helper) ;;
     *)          echo "Error: unknown package '$pkg'" >&2; exit 2 ;;
   esac
 
@@ -360,6 +438,23 @@ with open('$token_file', 'w') as f:
           echo "$files" | while read -r f; do
             echo "  - $f"
           done
+        fi
+      done
+    fi
+  elif [[ "$publish_url" == *"codeartifact"* ]] || [[ "$index_url" == *"codeartifact"* ]]; then
+    # CodeArtifact serves no PEP 503 root, so list versions via the control-plane
+    # API (same coordinates _clear_codeartifact_package deletes with).
+    if command -v aws &>/dev/null; then
+      for p in "${packages[@]}"; do
+        resolve_package "$p"
+        local versions
+        versions=$(aws codeartifact list-package-versions \
+          --domain "${CODEARTIFACT_DOMAIN:-}" --domain-owner "${CODEARTIFACT_DOMAIN_OWNER:-}" \
+          --repository "${CODEARTIFACT_REPOSITORY:-}" --format pypi \
+          --package "$PKG_NAME" --query 'versions[].version' --output text 2>/dev/null || true)
+        if [ -n "$versions" ]; then
+          has_wheels=true
+          for v in $versions; do echo "  - ${PKG_NAME}==${v}"; done
         fi
       done
     fi
@@ -502,6 +597,7 @@ _clear_index_for_package() {
     cli)          pkg_name="techneos-cli" ;;
     management)   pkg_name="techneos-management" ;;
     tool-runtime) pkg_name="techneos-tool-runtime" ;;
+    aws-helper)   pkg_name="techneos-aws" ;;
     *)            echo "  Unknown package: $pkg"; return ;;
   esac
 
@@ -563,9 +659,17 @@ _clear_codeartifact_package() {
     return
   fi
 
-  aws codeartifact delete-package \
-    --domain "$domain" --domain-owner "$owner" --repository "$repo" \
-    --package "$pkg_name" 2>/dev/null || true
+  # --format is required by the CodeArtifact API; without it the call errors out.
+  # Surface failures instead of swallowing them so a silent no-op can't recur.
+  local err
+  if err=$(aws codeartifact delete-package \
+      --domain "$domain" --domain-owner "$owner" --repository "$repo" \
+      --format pypi --package "$pkg_name" 2>&1); then
+    echo "    Deleted ${pkg_name} (all versions) from CodeArtifact"
+  else
+    echo "    Warning: could not delete ${pkg_name} from CodeArtifact:" >&2
+    echo "      ${err}" >&2
+  fi
 }
 
 _clear_compute_artifacts() {
