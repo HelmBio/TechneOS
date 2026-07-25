@@ -27,9 +27,9 @@ PUBLIC_PATHS = {
 
 # Path prefixes that don't require authentication. The PyPI Simple API proxy
 # (/simple/*) must be reachable unauthenticated so uv/pip can resolve packages
-# directly from the gateway URL — the gateway injects its own index credentials
-# downstream (see routes/artifacts.py). Matched by prefix because the index has
-# per-package and per-file subpaths (/simple/<pkg>/, /simple/<pkg>/<file>).
+# directly from the gateway URL — the gateway forwards these to app-service,
+# which injects the index credentials (see routes/simple_proxy.py). Matched by
+# prefix because the index has per-package and per-file subpaths.
 PUBLIC_PREFIXES = (
     "/simple/",
 )

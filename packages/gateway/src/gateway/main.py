@@ -23,9 +23,9 @@ from gateway.middleware.client_version import ClientVersionMiddleware
 from gateway.middleware.logging import RequestLoggingMiddleware
 from gateway.openapi import install_openapi, swagger_ui_html
 from gateway.routes.admin import router as admin_router
-from gateway.routes.artifacts import router as artifacts_router
 from gateway.routes.health import router as health_router
 from gateway.routes.proxy import router as proxy_router
+from gateway.routes.simple_proxy import router as simple_proxy_router
 
 
 @asynccontextmanager
@@ -86,10 +86,10 @@ def create_app() -> FastAPI:
     # paths (e.g. /admin/storage/files/delete) are matched first.
     app.include_router(admin_router, prefix=settings.api_v1_prefix, tags=["admin"])
     app.include_router(health_router, tags=["health"])
-    # Artifact upload endpoints (/api/v1/artifacts/*) and PyPI Simple API proxy
-    # (/simple/*). The /simple/ routes are unprefixed so uv/pip can resolve
-    # from the gateway URL directly.
-    app.include_router(artifacts_router, tags=["artifacts"])
+    # PyPI Simple index proxy (/simple/*) — unprefixed so uv/pip resolve from the
+    # gateway URL directly; forwarded to app-service (the artifact publisher).
+    # Artifact uploads (/api/v1/artifacts/*) are routed by the catch-all proxy.
+    app.include_router(simple_proxy_router, tags=["simple"])
     app.include_router(
         proxy_router,
         prefix=settings.api_v1_prefix,

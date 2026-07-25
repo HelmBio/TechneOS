@@ -51,6 +51,12 @@ def _get_service_routes() -> dict[str, str]:
                 "/assistant": settings.agent_service_url + settings.api_v1_prefix,
                 "/subscriptions": settings.notification_service_url + settings.api_v1_prefix,
                 "/notifications": settings.notification_service_url + settings.api_v1_prefix,
+                # All artifact publishing runs in app-service (the single
+                # publisher — it holds the docker socket + registry creds). The
+                # gateway holds no AWS/registry knowledge; it just routes here.
+                # /simple/* is forwarded by routes/simple_proxy.py (root path).
+                "/artifacts/image": settings.app_service_url + settings.api_v1_prefix,
+                "/artifacts/wheel": settings.app_service_url + settings.api_v1_prefix,
                 # Apps: runtime reverse proxy MUST come before /apps so its
                 # longer prefix wins during iteration.
                 "/apps/runtime": settings.app_service_url + settings.api_v1_prefix,

@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app_service.deployer import start_worker, stop_worker
-from app_service.routes import apps, launches
+from app_service.routes import apps, artifacts, launches, simple
 from app_service.runtime_proxy import router as runtime_router
 from app_service.seeds import reconcile_embedded_apps
 from core.auth.openapi import install_permission_annotations
@@ -94,6 +94,13 @@ prefix = settings.api_v1_prefix
 
 app.include_router(apps.router, prefix=f"{prefix}/apps", tags=["apps"])
 app.include_router(launches.router, prefix=f"{prefix}/app-launches", tags=["app-launches"])
+# Artifact publishing for the whole platform (apps + container tools + agents +
+# pypi tools) — app-service is the single publisher, so the gateway proxies
+# /api/v1/artifacts/{wheel,image} here.
+app.include_router(artifacts.router, prefix=f"{prefix}/artifacts", tags=["artifacts"])
+# PyPI Simple index (/simple/*) — served at root, unauthenticated, for uv/pip.
+# The gateway forwards /simple/* here (it is in the gateway's PUBLIC_PREFIXES).
+app.include_router(simple.router, tags=["simple"])
 # Runtime reverse proxy — under /api/v1/apps/runtime so it flows through
 # the gateway's standard auth middleware and routing.
 app.include_router(runtime_router, prefix=f"{prefix}/apps/runtime", tags=["apps-runtime"])

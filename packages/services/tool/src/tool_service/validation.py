@@ -4,12 +4,41 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import HTTPException
 
 from core.schemas.tool import RuntimeValidationResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _codeartifact_index_url(url: str | None) -> str | None:
+    """Return *url* with a CodeArtifact auth token injected, if applicable."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if ".d.codeartifact." not in hostname or "amazonaws.com" not in hostname:
+        return url
+
+    from techneos_aws import codeartifact
+
+    domain = os.getenv("CODEARTIFACT_DOMAIN", "techneos")
+    domain_owner = os.getenv("CODEARTIFACT_DOMAIN_OWNER") or os.getenv("AWS_ACCOUNT_ID")
+    if not domain_owner:
+        logger.warning("CODEARTIFACT_DOMAIN_OWNER not set — pip may fail with 401")
+        return url
+    token = codeartifact.mint_token(domain, domain_owner)
+    if not token:
+        logger.warning("Failed to mint CodeArtifact token — pip may fail with 401")
+        return url
+
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    new_netloc = f"aws:{token}@{netloc}"
+    return urlunparse(parsed._replace(netloc=new_netloc))
 
 # Validation timeouts and limits — applied to run_package_validation
 SCRIPT_TIMEOUT = 15
@@ -94,8 +123,9 @@ async def run_package_validation(
             # Install package
             pkg_spec = f"{package_name}=={package_version}"
             cmd = [*pip_cmd, pkg_spec]
-            if package_index_url:
-                cmd.extend(["--index-url", package_index_url])
+            resolved_index = _codeartifact_index_url(package_index_url)
+            if resolved_index:
+                cmd.extend(["--index-url", resolved_index])
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,

@@ -5,11 +5,14 @@ description = "Apps registry + runtime proxy service for TechneOS"
 requires-python = ">=3.12"
 dependencies = [
     "core",
+    "techneos-aws",    # ECR push tokens + repositories (+ CodeArtifact, as the artifact publisher)
     "docker>=7.1.0",
+    "httpx>=0.27",     # record artifacts via the tool-service
 ]
 
 [tool.uv.sources]
 core = { workspace = true }
+techneos-aws = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
