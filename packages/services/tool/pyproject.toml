@@ -5,10 +5,12 @@ description = "Tool registry service for TechneOS"
 requires-python = ">=3.12"
 dependencies = [
     "core",
+    "techneos-aws",
 ]
 
 [tool.uv.sources]
 core = { workspace = true }
+techneos-aws = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

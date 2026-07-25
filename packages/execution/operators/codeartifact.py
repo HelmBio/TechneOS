@@ -16,49 +16,33 @@ import logging
 import os
 from urllib.parse import urlparse, urlunparse
 
-import boto3
+from techneos_aws import codeartifact
 
 logger = logging.getLogger(__name__)
 
 
 def _get_codeartifact_token() -> str | None:
-    """Mint a fresh CodeArtifact authorization token.
+    """Mint a fresh CodeArtifact authorization token via :mod:`techneos_aws`.
 
     Runs only in the Airflow worker container (has IAM role / web-identity
     credentials attached). Returns a short-lived token, or ``None`` on error so
     the caller can fall back to the URL without auth rather than crash.
 
     Called at pip-install time (not at service startup), so it always gets a
-    fresh token — this is what lets the platform avoid Secrets Manager / Lambda
-    rotation entirely.
+    fresh (or freshly-cached) short-lived token — this is what lets the platform
+    avoid Secrets Manager / Lambda rotation entirely.
     """
-    try:
-        client = boto3.client(
-            "codeartifact", region_name=os.getenv("AWS_REGION", "us-east-1")
+    domain = os.getenv("CODEARTIFACT_DOMAIN", "techneos")
+    # The Airflow services set CODEARTIFACT_DOMAIN_OWNER; fall back to the generic
+    # AWS_ACCOUNT_ID for environments that only export that.
+    domain_owner = os.getenv("CODEARTIFACT_DOMAIN_OWNER") or os.getenv("AWS_ACCOUNT_ID")
+    if not domain_owner:
+        logger.warning(
+            "CODEARTIFACT_DOMAIN_OWNER / AWS_ACCOUNT_ID not set — "
+            "cannot mint CodeArtifact token"
         )
-        domain = os.getenv("CODEARTIFACT_DOMAIN", "techneos")
-        # The Airflow services set CODEARTIFACT_DOMAIN_OWNER; fall back to the
-        # generic AWS_ACCOUNT_ID for environments that only export that.
-        domain_owner = os.getenv("CODEARTIFACT_DOMAIN_OWNER") or os.getenv(
-            "AWS_ACCOUNT_ID"
-        )
-
-        if not domain_owner:
-            logger.warning(
-                "CODEARTIFACT_DOMAIN_OWNER / AWS_ACCOUNT_ID not set — "
-                "cannot mint CodeArtifact token"
-            )
-            return None
-
-        response = client.get_authorization_token(
-            domain=domain,
-            domainOwner=domain_owner,
-            durationSeconds=3600,  # 1 hour (shorter than the default 12h)
-        )
-        return response.get("authorizationToken")
-    except Exception as e:
-        logger.warning("Failed to mint CodeArtifact token: %s", e)
         return None
+    return codeartifact.mint_token(domain, domain_owner)
 
 
 def _inject_token_into_url(url: str, token: str) -> str:

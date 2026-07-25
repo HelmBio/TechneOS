@@ -25,11 +25,13 @@ COPY pyproject.toml ./
 COPY uv.lock ./
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
 COPY packages/tool-runtime/pyproject.toml packages/tool-runtime/pyproject.toml
+COPY packages/aws-helper/pyproject.toml packages/aws-helper/pyproject.toml
 COPY packages/platform-assistant/pyproject.toml packages/platform-assistant/pyproject.toml
 COPY packages/services/agent/pyproject.toml packages/services/agent/pyproject.toml
 
 COPY packages/core/src packages/core/src
 COPY packages/tool-runtime/src packages/tool-runtime/src
+COPY packages/aws-helper/src packages/aws-helper/src
 COPY packages/platform-assistant/src packages/platform-assistant/src
 COPY packages/services/agent/src packages/services/agent/src
 

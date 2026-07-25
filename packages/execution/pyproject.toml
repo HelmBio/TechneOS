@@ -7,7 +7,8 @@ dependencies = [
     "apache-airflow>=2.9",
     "httpx>=0.27",
     "docker>=7.0",
-    "boto3>=1.34",
+    "boto3>=1.34",          # AWS Batch backend (batch has no techneos_aws helper)
+    "techneos-aws>=0.1,<1",  # shared ECR + CodeArtifact primitives (installed from the index)
 ]
 
 [build-system]

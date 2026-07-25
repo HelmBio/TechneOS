@@ -5,11 +5,13 @@ description = "AI agent service for TechneOS"
 requires-python = ">=3.12"
 dependencies = [
     "core",
+    "techneos-aws",
     "techneos-platform-assistant",
 ]
 
 [tool.uv.sources]
 core = { workspace = true }
+techneos-aws = { workspace = true }
 techneos-platform-assistant = { workspace = true }
 
 [build-system]

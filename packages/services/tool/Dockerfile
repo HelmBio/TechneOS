@@ -8,10 +8,12 @@ COPY pyproject.toml ./
 COPY uv.lock ./
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
 COPY packages/tool-runtime/pyproject.toml packages/tool-runtime/pyproject.toml
+COPY packages/aws-helper/pyproject.toml packages/aws-helper/pyproject.toml
 COPY packages/services/tool/pyproject.toml packages/services/tool/pyproject.toml
 
 COPY packages/core/src packages/core/src
 COPY packages/tool-runtime/src packages/tool-runtime/src
+COPY packages/aws-helper/src packages/aws-helper/src
 COPY packages/services/tool/src packages/services/tool/src
 
 RUN uv sync --frozen --no-dev --package tool-service

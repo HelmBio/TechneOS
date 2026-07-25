@@ -1,10 +1,12 @@
 """Agent service FastAPI application."""
 
 import contextlib
+import os
 import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from importlib.metadata import entry_points
+from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
 
@@ -32,6 +34,40 @@ from core.exceptions import (  # noqa: E402
 from core.models.agent import AgentDefinition  # noqa: E402
 from core.models.tool import PypiConfig, ToolVersion  # noqa: E402
 from core.openapi import short_operation_id  # noqa: E402
+
+
+def _codeartifact_index_url(url: str | None) -> str | None:
+    """Return *url* with a CodeArtifact auth token injected, if applicable.
+
+    For CodeArtifact endpoints a short-lived token is minted from the
+    ambient IAM credentials and embedded as ``aws:<token>@`` in the URL.
+    Non-CodeArtifact URLs (e.g. local DevPI) are returned unchanged.
+    Returns ``None`` when *url* is ``None``.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if ".d.codeartifact." not in hostname or "amazonaws.com" not in hostname:
+        return url
+
+    from techneos_aws import codeartifact
+
+    domain = os.getenv("CODEARTIFACT_DOMAIN", "techneos")
+    domain_owner = os.getenv("CODEARTIFACT_DOMAIN_OWNER") or os.getenv("AWS_ACCOUNT_ID")
+    if not domain_owner:
+        print("  WARNING: CODEARTIFACT_DOMAIN_OWNER not set — pip may fail with 401")
+        return url
+    token = codeartifact.mint_token(domain, domain_owner)
+    if not token:
+        print("  WARNING: Failed to mint CodeArtifact token — pip may fail with 401")
+        return url
+
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    new_netloc = f"aws:{token}@{netloc}"
+    return urlunparse(parsed._replace(netloc=new_netloc))
 
 
 async def _install_registered_agent_packages() -> list[str]:
@@ -73,8 +109,9 @@ async def _install_registered_agent_packages() -> list[str]:
             continue
         spec = f"{name}=={version}"
         cmd = ["uv", "pip", "install", "--quiet", spec]
-        if index_url:
-            cmd.extend(["--index-url", index_url])
+        resolved_index = _codeartifact_index_url(index_url)
+        if resolved_index:
+            cmd.extend(["--index-url", resolved_index])
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"  Installed agent package: {spec}")
@@ -127,8 +164,9 @@ async def _install_registered_tool_packages() -> list[str]:
         should_install[package_name] = spec
         cmd = ["uv", "pip", "install", "--quiet", spec]
         index_url = cfg.package_index_url or default_index
-        if index_url:
-            cmd.extend(["--index-url", index_url])
+        resolved_index = _codeartifact_index_url(index_url)
+        if resolved_index:
+            cmd.extend(["--index-url", resolved_index])
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"  Installed tool package: {spec}")

@@ -241,6 +241,7 @@ services:
       - ./packages/execution/callbacks:/opt/airflow/callbacks
       - ./packages/execution/backends:/opt/airflow/backends
       - ./packages/execution/storage:/opt/airflow/storage
+      - ./packages/aws-helper/src/techneos_aws:/opt/airflow/techneos_aws
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.dev-tmp/inputs:/tmp/techneos-shared-inputs
     ports:
@@ -303,6 +304,7 @@ services:
       - ./packages/execution/callbacks:/opt/airflow/callbacks
       - ./packages/execution/backends:/opt/airflow/backends
       - ./packages/execution/storage:/opt/airflow/storage
+      - ./packages/aws-helper/src/techneos_aws:/opt/airflow/techneos_aws
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.dev-tmp/inputs:/tmp/techneos-shared-inputs
     depends_on:
