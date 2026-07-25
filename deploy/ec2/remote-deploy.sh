@@ -46,12 +46,37 @@ rm -rf "$REMOTE_DIR/deploy" "$REMOTE_DIR/packages" "$REMOTE_DIR/setup"
 tar xzf "$BUNDLE" -C "$REMOTE_DIR"
 chmod 600 "$ENV_FILE"
 
+# The docker group gid is host-specific (differs across EC2 AMIs), and the
+# airflow-scheduler adds it via group_add so its uid-50000 user can reach the
+# mounted docker socket to launch tool containers. Detect it on the host and
+# upsert it into the env file — never bake a host-specific value into the
+# templated .env. Re-derived every deploy, so a new instance just works.
+DOCKER_GID="$(getent group docker | cut -d: -f3 || true)"
+if [ -n "$DOCKER_GID" ]; then
+  if grep -q '^DOCKER_GID=' "$ENV_FILE"; then
+    sed -i "s/^DOCKER_GID=.*/DOCKER_GID=$DOCKER_GID/" "$ENV_FILE"
+  else
+    echo "DOCKER_GID=$DOCKER_GID" >> "$ENV_FILE"
+  fi
+  echo "=== Host docker group gid = $DOCKER_GID (airflow-scheduler group_add) ==="
+else
+  echo "WARN: no 'docker' group on host — airflow-scheduler will be denied the socket" >&2
+fi
+
 DOCKER_IMAGE_REGISTRY="$(_envval DOCKER_IMAGE_REGISTRY)"
 AWS_REGION="$(_envval AWS_REGION)"; AWS_REGION="${AWS_REGION:-us-east-1}"
 API_HOST="$(_host_of "$(_envval PLATFORM_API_URL)")"
 PORTAL_HOST="$(_host_of "$(_envval PLATFORM_PORTAL_URL)")"
 MINIO_BUCKET="$(_envval MINIO_BUCKET)"; MINIO_BUCKET="${MINIO_BUCKET:-techneos-data}"
 CERTBOT_EMAIL="$(_envval CERTBOT_EMAIL)"
+
+# The airflow worker (uid 50000) writes per-step work dirs into the shared-inputs
+# bind mount, so the host dir it maps to must exist and be owned by that uid —
+# another host-specific setup step that belongs here, not in a manual runbook.
+SHARED_INPUT_DIR="$(_envval TECHNEOS_HOST_SHARED_INPUT_DIR)"
+SHARED_INPUT_DIR="${SHARED_INPUT_DIR:-/data/techneos/airflow-inputs}"
+mkdir -p "$SHARED_INPUT_DIR"
+chown -R 50000:0 "$SHARED_INPUT_DIR"
 
 # --- Registry auth ------------------------------------------------------------
 # Only for ECR. With the isolated DOCKER_CONFIG above, `docker login` stores the

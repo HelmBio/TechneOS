@@ -93,13 +93,25 @@ x-airflow-client-env: &airflow-client-env
 
 x-airflow-env: &airflow-env
   PYTHONPATH: /opt/airflow
+  # Shared secret for the worker's status callbacks to the platform (X-Internal-Token).
+  # The airflow services don't pull in *platform-env, so set it explicitly — the
+  # worker falls back to this env var when the DAG conf doesn't carry the token.
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
+  # Private techneos-* wheels come from the gateway index (plain HTTP, in-cluster).
+  # pip ignores an untrusted HTTP host unless it's whitelisted, hence TRUSTED_HOST.
+  # Public deps (minio, and boto3 pulled in by techneos-aws) are not in
+  # CodeArtifact, so PyPI is added as an extra index for _PIP_ADDITIONAL_REQUIREMENTS
+  # and the per-run tool installs.
+  PIP_INDEX_URL: http://gateway:8000/simple/
+  PIP_EXTRA_INDEX_URL: https://pypi.org/simple/
+  PIP_TRUSTED_HOST: gateway
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-techneos}:${POSTGRES_PASSWORD}@postgres:5432/airflow
   AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?set AIRFLOW_WEBSERVER_SECRET_KEY in .env}
   AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-  _PIP_ADDITIONAL_REQUIREMENTS: "minio>=7.2"
+  _PIP_ADDITIONAL_REQUIREMENTS: "minio>=7.2 techneos-aws>=0.1,<1"
 
 x-service: &service
   restart: unless-stopped
@@ -300,6 +312,13 @@ services:
     restart: unless-stopped
     logging: *logging
     command: scheduler
+    # The scheduler starts tool containers as siblings via the host docker
+    # socket. The airflow image runs as uid 50000, which isn't in the host's
+    # docker group, so it must be added explicitly or the daemon denies access
+    # ("PermissionError(13)" fetching the API version). DOCKER_GID is the host's
+    # docker group id: getent group docker | cut -d: -f3
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID (getent group docker | cut -d: -f3) in .env}"
     environment:
       <<: [*airflow-env, *minio-env, *airflow-client-env]
       COMPUTE_BACKEND: ${COMPUTE_BACKEND:-docker}
@@ -314,6 +333,8 @@ services:
       # Credential-free base URL. The worker mints a CodeArtifact token per
       # install from the instance role; nothing is stored here.
       PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+      CODEARTIFACT_DOMAIN: ${CODEARTIFACT_DOMAIN:-techneos}
+      CODEARTIFACT_DOMAIN_OWNER: ${CODEARTIFACT_DOMAIN_OWNER:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AIRFLOW_TASK_RETRIES: ${AIRFLOW_TASK_RETRIES:-1}
       AIRFLOW_RETRY_DELAY_MINUTES: ${AIRFLOW_RETRY_DELAY_MINUTES:-1}
@@ -374,6 +395,8 @@ services:
     environment:
       <<: [*platform-env, *minio-env, *airflow-client-env]
       PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+      CODEARTIFACT_DOMAIN: ${CODEARTIFACT_DOMAIN:-techneos}
+      CODEARTIFACT_DOMAIN_OWNER: ${CODEARTIFACT_DOMAIN_OWNER:-}
     ports:
       - "127.0.0.1:8003:8003"
 
@@ -394,6 +417,8 @@ services:
       <<: [*platform-env, *minio-env]
       GATEWAY_URL: http://gateway:8000
       PYTHON_PACKAGE_INDEX_URL: ${PYTHON_PACKAGE_INDEX_URL:-}
+      CODEARTIFACT_DOMAIN: ${CODEARTIFACT_DOMAIN:-techneos}
+      CODEARTIFACT_DOMAIN_OWNER: ${CODEARTIFACT_DOMAIN_OWNER:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
     ports:
       - "127.0.0.1:8005:8005"
@@ -409,8 +434,13 @@ services:
   app-service:
     <<: *service
     image: ${DOCKER_IMAGE_REGISTRY}/techneos/app-service:${APP_SERVICE_IMAGE_TAG:?set by deploy.sh}
+    # app-service publishes images (apps + container tools) to ECR — it needs
+    # DOCKER_IMAGE_REGISTRY + AWS_REGION from .env (AWS creds come from the EC2
+    # instance role), and TOOL_SERVICE_URL (*service-urls) to record artifacts.
+    env_file:
+      - .env
     environment:
-      <<: [*platform-env, *keycloak-env]
+      <<: [*platform-env, *service-urls, *keycloak-env]
       APP_DEPLOYER_BACKEND: ${APP_DEPLOYER_BACKEND:-docker}
       APP_DEPLOYER_HOST: ${APP_DEPLOYER_HOST:-host.docker.internal}
     # host.docker.internal is a Docker Desktop name; on a Linux host it has to
