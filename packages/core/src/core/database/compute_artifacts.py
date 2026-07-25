@@ -39,3 +39,28 @@ async def find_artifact(
         stmt = stmt.where(ComputeArtifact.status == "available")
     result = await session.execute(stmt.limit(1))
     return result.scalars().first()
+
+
+async def find_latest_artifact(
+    session: AsyncSession,
+    *,
+    kind: str,
+    name: str,
+    available_only: bool = True,
+) -> ComputeArtifact | None:
+    """Return the most recently published artifact for (kind, name), or None.
+
+    Used to pin the platform tool-runtime image: pypi tools run on the current
+    published ``techneos/tool-runtime`` recorded in the inventory rather than a
+    mutable ``:latest`` tag. Ordered by ``published_at`` so a runtime bump is
+    picked up without touching config.
+    """
+    stmt = select(ComputeArtifact).where(
+        ComputeArtifact.kind == kind,
+        ComputeArtifact.name == name,
+    )
+    if available_only:
+        stmt = stmt.where(ComputeArtifact.status == "available")
+    stmt = stmt.order_by(ComputeArtifact.published_at.desc()).limit(1)
+    result = await session.execute(stmt)
+    return result.scalars().first()

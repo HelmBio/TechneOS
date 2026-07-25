@@ -38,12 +38,11 @@ class DockerBackend(ComputeBackend):
         image_ref = f"{spec.image}:{spec.tag}"
 
         def _run() -> str:
-            # Image resolution. Once pulled, layers stay in the daemon's image
-            # store until pruned, so we only need to hit the registry when the
-            # image isn't cached — or when the tag is mutable (":latest"), where
-            # a re-push under the same tag must be picked up. Version tags
-            # (e.g. ":0.1.0") are immutable, so a cached copy is reused without
-            # any ECR round-trip or token mint.
+            # Image resolution. Tools run pinned, immutable version tags (the
+            # orchestrator resolves them from the compute-artifact inventory —
+            # never :latest), so a cached copy is always safe to reuse: we hit
+            # the registry only when the image isn't cached. This also avoids a
+            # doomed pull of a local-only dev image (bare name → Docker Hub 404).
             #
             # For ECR images the host's credential helper does not apply to
             # docker-py talking to the daemon socket, so we mint a token via the
@@ -56,7 +55,7 @@ class DockerBackend(ComputeBackend):
             except (NotFound, DockerException):
                 cached = False
 
-            if cached and spec.tag != "latest":
+            if cached:
                 logger.info("Image %s already cached — skipping pull", image_ref)
             else:
                 try:

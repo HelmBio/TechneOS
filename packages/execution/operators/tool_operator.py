@@ -406,9 +406,11 @@ class ToolOperator(BaseOperator):
             # then runs the generic runner with ENTRYPOINT_SPEC. No command
             # override — driving the install via env works identically on the
             # Docker and AWS Batch backends (Batch can't override an entrypoint).
-            # Image/tag overridable so a deploy can pin a specific tag.
+            # Pin the runtime to the version the orchestrator resolved from the
+            # compute-artifact inventory (step["image_tag"]); fall back to the
+            # deploy env only if it wasn't provided. Never a bare mutable tag.
             image = os.getenv("TECHNEOS_RUNTIME_IMAGE", "techneos/tool-runtime")
-            image_tag = os.getenv("TECHNEOS_RUNTIME_IMAGE_TAG", "latest")
+            image_tag = step.get("image_tag") or os.getenv("TECHNEOS_RUNTIME_IMAGE_TAG", "latest")
 
             from operators.codeartifact import mint_codeartifact_token_for_url
 
@@ -418,6 +420,20 @@ class ToolOperator(BaseOperator):
                 if package_index_url
                 else ""
             )
+            # If the URL is a CodeArtifact endpoint, the token MUST have been
+            # injected — a bare URL causes pip to prompt for credentials
+            # (EOFError in containers).  Non-CodeArtifact URLs pass through as-is.
+            if (
+                package_index_url
+                and index_url
+                and ".d.codeartifact." in package_index_url
+                and index_url == package_index_url
+            ):
+                raise RuntimeError(
+                    f"Cannot mint CodeArtifact token for {package_index_url} — "
+                    "check CODEARTIFACT_DOMAIN_OWNER / AWS_ACCOUNT_ID env vars "
+                    "and the instance IAM role (codeartifact:GetAuthorizationToken)"
+                )
             env["TECHNEOS_INSTALL_PACKAGE"] = f"{package_name}=={package_version}"
             env["ENTRYPOINT_SPEC"] = str(entry_point)
             if index_url:

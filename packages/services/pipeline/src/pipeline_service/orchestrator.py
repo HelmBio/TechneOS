@@ -67,6 +67,21 @@ async def dispatch_run(
     )
     pipeline_slug = pipeline_def.slug if pipeline_def else ""
 
+    # Pin the tool-runtime base for pypi steps to the inventory version (never
+    # a mutable :latest). Resolved once — all pypi steps share the platform
+    # runtime.
+    from core.config import get_settings
+    from core.database.compute_artifacts import find_latest_artifact
+
+    # Recorded under its full name: the ECR URL in prod, bare techneos/tool-runtime
+    # locally (matches how the worker builds TECHNEOS_RUNTIME_IMAGE).
+    _registry = get_settings().docker_image_registry
+    _runtime_name = (
+        f"{_registry}/techneos/tool-runtime" if _registry else "techneos/tool-runtime"
+    )
+    rt = await find_latest_artifact(session, kind="docker_image", name=_runtime_name)
+    runtime_image_tag = rt.version if rt else None
+
     # Build step configs for the Airflow DAG
     step_confs = await _build_step_confs(
         definition,
@@ -74,6 +89,7 @@ async def dispatch_run(
         pipeline=pipeline_def,
         pipeline_slug=pipeline_slug,
         pipeline_version_num=definition.version,
+        runtime_image_tag=runtime_image_tag,
     )
 
     # Inject backend_config from compute_backends table for each step that
@@ -271,6 +287,7 @@ async def _build_step_confs(
     pipeline: Pipeline | None = None,
     pipeline_slug: str = "",
     pipeline_version_num: int | None = None,
+    runtime_image_tag: str | None = None,
 ) -> list[dict[str, Any]]:
     """Convert pipeline definition steps into Airflow-friendly conf dicts.
 
@@ -384,9 +401,14 @@ async def _build_step_confs(
             image = registry_image
         else:
             image = f"techneos/{tool_slug}" if tool_slug else ""
-        image_tag = registry_image_tag or "latest"
+        # Container steps pin via the recorded docker_tag; pypi steps pin the
+        # tool-runtime base to the inventory version. Never a mutable :latest.
         if tool_type == "human":
             image_tag = ""
+        elif tool_type == "pypi":
+            image_tag = runtime_image_tag or "latest"
+        else:
+            image_tag = registry_image_tag or "latest"
 
         # Artifact key prefix: pipeline-runs/{slug}/v{N}/{run_id}/{step_name}.
         # The worker uses this as the storage-key prefix for output

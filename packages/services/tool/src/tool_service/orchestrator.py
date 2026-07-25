@@ -60,7 +60,33 @@ async def dispatch_tool_run(
         )
         return run
 
-    step_conf = _build_single_step_conf(tool_version, run.parameters or {}, run_id=run.id)
+    # Pin the tool-runtime base for pypi tools to the version recorded in the
+    # compute-artifact inventory (never a mutable :latest — the worker must run
+    # the exact published runtime).
+    runtime_image_tag: str | None = None
+    tool = tool_version.tool
+    if tool and tool.tool_type == "pypi":
+        from core.config import get_settings
+        from core.database.compute_artifacts import find_latest_artifact
+
+        # The tool-runtime image is recorded under its full name: the ECR URL
+        # ({registry}/techneos/tool-runtime) in prod, bare techneos/tool-runtime
+        # locally. Query that same name (this is also the ref the worker pulls).
+        registry = get_settings().docker_image_registry
+        runtime_name = (
+            f"{registry}/techneos/tool-runtime" if registry else "techneos/tool-runtime"
+        )
+        rt = await find_latest_artifact(session, kind="docker_image", name=runtime_name)
+        runtime_image_tag = rt.version if rt else None
+        if not runtime_image_tag:
+            logger.warning(
+                "No published %s in the inventory — pypi run %s cannot pin the "
+                "runtime image.", runtime_name, run.id,
+            )
+
+    step_conf = _build_single_step_conf(
+        tool_version, run.parameters or {}, run_id=run.id, runtime_image_tag=runtime_image_tag
+    )
 
     # Inject backend config from the compute_backends table so the worker
     # can pass it to the backend constructor (instead of relying on env vars).
@@ -322,6 +348,7 @@ def _build_single_step_conf(
     tool_version: ToolVersion,
     parameters: dict[str, Any],
     run_id: str = "",
+    runtime_image_tag: str | None = None,
 ) -> dict[str, Any]:
     """Build the one-element step conf for the techneos_airflow_pipeline DAG."""
     tool = tool_version.tool
@@ -336,7 +363,9 @@ def _build_single_step_conf(
     container_cfg = getattr(tool_version, "container_config", None)
     if container_cfg and container_cfg.docker_image:
         image = container_cfg.docker_image
-    image_tag = (container_cfg.docker_tag if container_cfg else None) or "latest"
+    # Container tools pin via their recorded docker_tag; pypi tools pin the
+    # tool-runtime base to the version resolved from the inventory. Never :latest.
+    image_tag = (container_cfg.docker_tag if container_cfg else None) or runtime_image_tag or "latest"
 
     # Property names declared in the tool's input_schema. The worker uses
     # this list to know which parameter keys may carry a dataset/upload
