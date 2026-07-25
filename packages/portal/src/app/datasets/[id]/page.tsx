@@ -1164,7 +1164,7 @@ export default function DatasetDetailPage() {
         <UploadModal
           datasetId={dataset.id}
           datasetName={dataset.name}
-          userOrgId={user?.org_id}
+          userOrgId={user?.org_id ?? undefined}
           versionId={uploadModal.versionId}
           versionNumber={uploadModal.versionNumber}
           initialTab={uploadModal.initialTab}

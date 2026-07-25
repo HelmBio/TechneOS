@@ -10,7 +10,9 @@ export interface DataPanelState {
 }
 
 interface DataPanelProps {
-  title: string;
+  /** Optional heading; omit when the caller renders its own (e.g. with a
+   *  required-field asterisk) so the panel doesn't add a second one. */
+  title?: string;
   format?: string;
   uploadFn: (file: File) => Promise<unknown>;
   onChange?: (state: DataPanelState) => void;
@@ -77,7 +79,7 @@ export function DataPanel({ title, format, uploadFn, onChange }: DataPanelProps)
 
   return (
     <div className="rounded-lg border border-gray-200 p-4 space-y-4">
-      <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+      {title && <h3 className="text-sm font-semibold text-gray-800">{title}</h3>}
 
       <div className="flex gap-2">
         {!isBinary && (
