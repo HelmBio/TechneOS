@@ -292,8 +292,8 @@ def build_and_publish_wheel(package_dir: Path, force: bool = False) -> tuple[str
 
     Version handling:
     - If version exists and force=True: overwrites the existing version
-    - If version exists and force=False: auto-bumps to {version}-{git_sha}
-      with a warning to bump the version in pyproject.toml
+    - If version exists and force=False: auto-bumps to {version}+{git_sha}
+      (a PEP 440 local version) with a warning to bump pyproject.toml
     """
     meta = read_package_meta(package_dir)
     wheel = build_wheel(package_dir)
@@ -335,10 +335,13 @@ def build_and_publish_wheel(package_dir: Path, force: bool = False) -> tuple[str
                 else:
                     print(f"  Overwrote {wheel.name}")
             else:
-                # Auto-bump: append git SHA to version
+                # Auto-bump: append git SHA as a PEP 440 local version segment
+                # (``+sha``, not ``-sha`` — the latter is not a valid version and
+                # fails ``uv build``). Sorts after the base version and still
+                # satisfies ``>=X,<Y`` constraints.
                 git_sha = current_git_sha()
                 if git_sha:
-                    bumped_version = f"{meta.version}-{git_sha}"
+                    bumped_version = f"{meta.version}+{git_sha}"
                     print(f"  Warning: Version {meta.version} already exists in index.")
                     print(f"  Auto-bumping to {bumped_version} for this build.")
                     print(f"  Bump the version in pyproject.toml for the next release.")
@@ -1054,12 +1057,26 @@ def upload_image_to_gateway(
 
     image = build_image or f"techneos/{slug}"
 
-    # Build image locally
+    # The deploy target (EC2) is linux/amd64, so cross-build for it explicitly on
+    # non-local envs. A plain `docker build` on Apple Silicon produces an arm64
+    # image; pushed to ECR and run on the amd64 host it dies with an exec-format
+    # error the instant it starts (the container never exposes its port). Local
+    # dev runs the app on the build host, so build native there.
+    env = session.env_arg or "local"
     print(f"  Building {image}:{version} ...")
-    _run_or_exit(
-        ["docker", "build", "-t", f"{image}:{version}", "-t", f"{image}:latest", str(package_dir)],
-        errmsg=f"docker build failed for {image}",
-    )
+    if env == "local":
+        _run_or_exit(
+            ["docker", "build", "-t", f"{image}:{version}", "-t", f"{image}:latest", str(package_dir)],
+            errmsg=f"docker build failed for {image}",
+        )
+    else:
+        # buildx --load builds the amd64 image (via QEMU) into the local daemon so
+        # `docker save` below can export a single-arch tar for the gateway to push.
+        _run_or_exit(
+            ["docker", "buildx", "build", "--platform", "linux/amd64",
+             "-t", f"{image}:{version}", "-t", f"{image}:latest", "--load", str(package_dir)],
+            errmsg=f"docker buildx build failed for {image}",
+        )
 
     # Save to tar
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as tmp:
@@ -1091,5 +1108,12 @@ def upload_image_to_gateway(
     finally:
         tar_path.unlink(missing_ok=True)
 
+    # Return the bare image name the gateway recorded in the inventory (e.g.
+    # ``techneos/<slug>``), NOT ``{image}:{version}`` — the container ToolVersion
+    # stores the tag separately in ``docker_tag`` and is hard-validated against
+    # ``find_artifact(name=docker_image, version=docker_tag)``. Appending the tag
+    # here yields ``…:{version}`` as the name and a phantom ``…:{version}:{version}``
+    # lookup that never matches. Mirrors ``build_image_and_record``'s untagged ref.
+    recorded_name = resp.json().get("name") or image
     print(f"  Uploaded {image}:{version} to gateway")
-    return f"{image}:{version}"
+    return recorded_name
