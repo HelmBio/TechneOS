@@ -9,6 +9,7 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "packages/core",
+    "packages/aws-helper",
     "packages/tool-runtime",
     "packages/platform-assistant",
     "packages/gateway",

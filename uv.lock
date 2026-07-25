@@ -19,6 +19,7 @@ members = [
     "pipeline-service",
     "task-service",
     "techneos",
+    "techneos-aws",
     "techneos-cli",
     "techneos-management",
     "techneos-platform-assistant",
@@ -32,12 +33,14 @@ version = "0.1.0"
 source = { editable = "packages/services/agent" }
 dependencies = [
     { name = "core" },
+    { name = "techneos-aws" },
     { name = "techneos-platform-assistant" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "core", editable = "packages/core" },
+    { name = "techneos-aws", editable = "packages/aws-helper" },
     { name = "techneos-platform-assistant", editable = "packages/platform-assistant" },
 ]
 
@@ -124,12 +127,16 @@ source = { editable = "packages/services/app" }
 dependencies = [
     { name = "core" },
     { name = "docker" },
+    { name = "httpx" },
+    { name = "techneos-aws" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "core", editable = "packages/core" },
     { name = "docker", specifier = ">=7.1.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "techneos-aws", editable = "packages/aws-helper" },
 ]
 
 [[package]]
@@ -2921,6 +2928,17 @@ dev = [
 ]
 
 [[package]]
+name = "techneos-aws"
+version = "0.1.0"
+source = { editable = "packages/aws-helper" }
+dependencies = [
+    { name = "boto3" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "boto3", specifier = ">=1.34" }]
+
+[[package]]
 name = "techneos-cli"
 version = "0.1.0"
 source = { editable = "packages/cli" }
@@ -3068,10 +3086,14 @@ version = "0.1.0"
 source = { editable = "packages/services/tool" }
 dependencies = [
     { name = "core" },
+    { name = "techneos-aws" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core", editable = "packages/core" }]
+requires-dist = [
+    { name = "core", editable = "packages/core" },
+    { name = "techneos-aws", editable = "packages/aws-helper" },
+]
 
 [[package]]
 name = "tqdm"
