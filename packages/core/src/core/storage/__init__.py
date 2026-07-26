@@ -152,16 +152,27 @@ class MinIOStore:
         if settings.minio_public_endpoint:
             from minio import Minio
 
+            # The Minio client rejects an endpoint that carries a scheme
+            # ("path in endpoint is not allowed"), but MINIO_PUBLIC_ENDPOINT is
+            # naturally written as a URL (https://host). Accept either form:
+            # strip a leading scheme, and let http:// downgrade to insecure.
+            public_endpoint = settings.minio_public_endpoint
+            secure = True
+            if "://" in public_endpoint:
+                scheme, public_endpoint = public_endpoint.split("://", 1)
+                secure = scheme.lower() != "http"
+            public_endpoint = public_endpoint.rstrip("/")
+
             # Signing-only client for the public endpoint. The region parameter
             # prevents Minio from making an HTTP request to determine the region,
             # which would fail against the nginx proxy (it's not a real MinIO).
             # We sign with the public endpoint so the URL is valid when accessed
             # from a browser, but we skip the region detection call.
             signing_client = Minio(
-                settings.minio_public_endpoint,
+                public_endpoint,
                 access_key=self._access_key,
                 secret_key=self._secret_key,
-                secure=True,
+                secure=secure,
                 region=settings.minio_region,
             )
         else:
