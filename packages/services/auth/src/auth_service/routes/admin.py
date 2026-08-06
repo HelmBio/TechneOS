@@ -34,6 +34,7 @@ from auth_service.crud.admin import (
     write_audit_log,
 )
 from auth_service.crud.buckets import create_bucket
+from core.audit import client_ip as _client_ip
 from auth_service.crud.teams import count_all_teams, list_all_teams
 from auth_service.crud.users import create_user, get_user_by_email, get_user_by_id
 from core.auth.dependencies import get_current_admin_user, get_current_superuser
@@ -162,7 +163,7 @@ async def admin_update_user_route(
         resource_type="user",
         resource_id=user_id,
         details=data.model_dump(exclude_unset=True),
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -191,7 +192,7 @@ async def admin_reset_password_route(
         resource_type="user",
         resource_id=user_id,
         details={"target_user_id": user_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -229,7 +230,7 @@ async def admin_create_user(
         resource_type="user",
         resource_id=user.id,
         details={"email": data.email, "full_name": data.full_name, "org_id": data.org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -277,7 +278,7 @@ async def admin_delete_user_by_email(
             resource_type="user",
             resource_id=str(user.id),
             details={"target_email": email, "target_org_id": str(user.org_id)},
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
 
@@ -351,7 +352,7 @@ async def admin_create_org(
         resource_type="org",
         resource_id=org.id,
         details={"name": data.name, "slug": data.slug},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return OrgResponse.model_validate(org)
@@ -374,7 +375,7 @@ async def admin_update_org(
         resource_type="org",
         resource_id=org_id,
         details=data.model_dump(exclude_unset=True),
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return OrgResponse.model_validate(org)
@@ -414,7 +415,7 @@ async def admin_create_role(
         resource_type="role",
         resource_id=role.id,
         details={"name": data.name, "permissions": data.permissions},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return RoleResponse.model_validate(role)
@@ -437,7 +438,7 @@ async def admin_update_role(
         resource_type="role",
         resource_id=role_id,
         details=data.model_dump(exclude_unset=True),
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return RoleResponse.model_validate(role)
@@ -507,7 +508,7 @@ async def admin_create_llm_provider(
         resource_type="llm_provider",
         resource_id=p.id,
         details={"name": data.name, "slug": data.slug, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _llm_response(p)
@@ -531,7 +532,7 @@ async def admin_update_llm_provider(
         resource_type="llm_provider",
         resource_id=provider_id,
         details=update_data,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _llm_response(p)
@@ -553,7 +554,7 @@ async def admin_delete_llm_provider(
         resource_type="llm_provider",
         resource_id=provider_id,
         details={},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -622,7 +623,7 @@ async def admin_create_bucket(
             "slug": data.slug,
             "bucket_name": data.bucket_name,
         },
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _bucket_response(b)

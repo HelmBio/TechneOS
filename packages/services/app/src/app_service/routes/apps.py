@@ -34,6 +34,7 @@ from core.schemas.app import (
     AppResponse,
     AppUpdate,
 )
+from core.audit import client_ip as _client_ip
 from core.utils import is_uuid
 
 router = APIRouter()
@@ -43,13 +44,6 @@ def _require_org(user: TokenPayload) -> str:
     if not user.org_id:
         raise HTTPException(status_code=403, detail="User is not associated with an organization")
     return user.org_id
-
-
-def _client_ip(request: Request) -> str | None:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else None
 
 
 def _append_query(url: str, **params: str) -> str:

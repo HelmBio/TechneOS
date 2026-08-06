@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_service.crud.admin import write_audit_log
+from core.audit import client_ip as _client_ip
 from core.auth.dependencies import get_current_user
 from core.auth.rbac import require_permission
 from core.database.postgres import get_async_session
@@ -121,7 +122,7 @@ async def create_org_llm_provider(
         resource_type="llm_provider",
         resource_id=p.id,
         details={"name": data.name, "slug": data.slug, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _response(p)
@@ -175,7 +176,7 @@ async def update_org_llm_provider(
         resource_type="llm_provider",
         resource_id=provider_id,
         details=update_data,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _response(p)
@@ -206,6 +207,6 @@ async def delete_org_llm_provider(
         resource_type="llm_provider",
         resource_id=provider_id,
         details={"name": p.name, "slug": p.slug, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )

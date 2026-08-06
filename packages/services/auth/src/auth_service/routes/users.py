@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_service.crud.admin import write_audit_log
+from core.audit import client_ip as _client_ip
 from auth_service.crud.users import (
     count_users,
     create_user,
@@ -125,7 +126,7 @@ async def create_user_route(
         resource_type="user",
         resource_id=user.id,
         details={"email": data.email, "full_name": data.full_name, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -200,7 +201,7 @@ async def update_user_route(
         resource_type="user",
         resource_id=user_id,
         details=data.model_dump(exclude_unset=True),
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 

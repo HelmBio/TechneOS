@@ -2,9 +2,23 @@
 import uuid
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.user import AuditLog
+
+
+def client_ip(request: Request) -> str | None:
+    """Extract the real client IP, respecting reverse-proxy headers.
+
+    Checks ``X-Forwarded-For`` first (set by load balancers / reverse
+    proxies), falling back to the direct TCP peer address.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # X-Forwarded-For is comma-separated; first entry is the original client.
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 async def write_audit_log(
