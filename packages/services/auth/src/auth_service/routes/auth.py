@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_service.crud.admin import write_audit_log
+from core.audit import client_ip as _client_ip
 from auth_service.crud.users import (
     change_password,
     create_user,
@@ -218,7 +219,7 @@ async def register(
         resource_type="user",
         resource_id=user.id,
         details={"email": data.email, "full_name": data.full_name},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -274,7 +275,7 @@ async def login(
             action="user_login_failed",
             resource_type="auth",
             details={"email": data.email, "reason": "unknown_email"},
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         raise InvalidCredentialsError()
@@ -287,7 +288,7 @@ async def login(
             resource_type="auth",
             resource_id=user.id,
             details={"email": data.email, "reason": "invalid_password"},
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         raise InvalidCredentialsError()
@@ -300,7 +301,7 @@ async def login(
             resource_type="auth",
             resource_id=user.id,
             details={"email": data.email, "reason": "inactive_account"},
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         raise InvalidCredentialsError()
@@ -326,7 +327,7 @@ async def login(
         resource_type="auth",
         resource_id=user.id,
         details={"email": user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -347,6 +348,7 @@ class TokenExchangeRequest(BaseModel):
 @router.post("/token-exchange", response_model=TokenPair)
 async def token_exchange(
     data: TokenExchangeRequest,
+    request: Request,
     response: Response,
     session: AsyncSession = Depends(get_async_session),
 ) -> TokenPair:
@@ -356,9 +358,9 @@ async def token_exchange(
     the authorization code so we can exchange it correctly.
     """
     if data.provider == "oauth2":
-        tokens = await _token_exchange_oauth2(data, session)
+        tokens = await _token_exchange_oauth2(data, request, session)
     elif data.provider == "keycloak":
-        tokens = await _token_exchange_keycloak(data, session)
+        tokens = await _token_exchange_keycloak(data, request, session)
     else:
         from core.exceptions import ValidationError
 
@@ -370,6 +372,7 @@ async def token_exchange(
 
 async def _token_exchange_keycloak(
     data: TokenExchangeRequest,
+    request: Request,
     session: AsyncSession,
 ) -> TokenPair:
     """Handle token exchange for Keycloak (PKCE flow).
@@ -458,11 +461,24 @@ async def _token_exchange_keycloak(
             "permissions": permissions,
         },
     )
+
+    await write_audit_log(
+        session,
+        user_id=user.id,
+        action="user_login",
+        resource_type="auth",
+        resource_id=user.id,
+        details={"email": user.email, "provider": "keycloak"},
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
     return tokens
 
 
 async def _token_exchange_oauth2(
     data: TokenExchangeRequest,
+    request: Request,
     session: AsyncSession,
 ) -> TokenPair:
     """Handle token exchange for the generic OAuth2 provider.
@@ -534,6 +550,18 @@ async def _token_exchange_oauth2(
             "permissions": permissions,
         },
     )
+
+    await write_audit_log(
+        session,
+        user_id=user.id,
+        action="user_login",
+        resource_type="auth",
+        resource_id=user.id,
+        details={"email": user.email, "provider": "oauth2"},
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
     return tokens
 
 
@@ -609,7 +637,7 @@ async def logout(
         resource_type="auth",
         resource_id=current_user.sub,
         details={"email": current_user.email, "provider": data.provider},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -700,6 +728,6 @@ async def change_password_route(
         resource_type="auth",
         resource_id=current_user.sub,
         details={"email": current_user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )

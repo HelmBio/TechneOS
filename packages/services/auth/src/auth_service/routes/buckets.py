@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_service.crud.admin import write_audit_log
+from core.audit import client_ip as _client_ip
 from auth_service.crud.buckets import (
     create_bucket,
     get_bucket,
@@ -105,7 +106,7 @@ async def create_org_bucket(
             "bucket_name": data.bucket_name,
             "org_id": org_id,
         },
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _response(b)
@@ -150,7 +151,7 @@ async def update_org_bucket(
         resource_type="object_store_bucket",
         resource_id=bucket_id,
         details=update_data,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     return _response(b)
@@ -180,7 +181,7 @@ async def delete_org_bucket(
         resource_type="object_store_bucket",
         resource_id=bucket_id,
         details={"name": b.name, "slug": b.slug, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 

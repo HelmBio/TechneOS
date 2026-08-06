@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_service.crud.admin import write_audit_log
+from core.audit import client_ip as _client_ip
 from auth_service.crud.teams import (
     count_teams,
     create_team,
@@ -80,7 +81,7 @@ async def create_team_route(
         resource_type="team",
         resource_id=team.id,
         details={"name": data.name, "org_id": org_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -143,7 +144,7 @@ async def update_team_route(
         resource_type="team",
         resource_id=team_id,
         details=data.model_dump(exclude_unset=True),
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 

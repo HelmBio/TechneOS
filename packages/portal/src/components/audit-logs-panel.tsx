@@ -66,7 +66,7 @@ export default function AuditLogsPanel({
               if (cancelled) return;
               const map: Record<string, string> = {};
               for (const u of data.items) {
-                map[u.id] = u.full_name || u.email;
+                map[u.id] = u.email;
               }
               setUserMap(map);
             })
@@ -81,7 +81,7 @@ export default function AuditLogsPanel({
               if (cancelled) return;
               const map: Record<string, string> = {};
               for (const o of data.items) {
-                map[o.id] = o.name;
+                map[o.id] = o.slug;
               }
               setOrgMap(map);
             })
@@ -176,17 +176,17 @@ export default function AuditLogsPanel({
     if (resource_type === "user" || resource_type === "auth") {
       if (userMap[resource_id]) return userMap[resource_id];
       if (details?.email) return String(details.email);
-      if (details?.full_name) return String(details.full_name);
     }
     if (resource_type === "org") {
       if (orgMap[resource_id]) return orgMap[resource_id];
-      if (details?.name) return String(details.name);
+      if (details?.slug) return String(details.slug);
     }
     if (resource_type === "role") {
       if (roleMap[resource_id]) return roleMap[resource_id];
       if (details?.name) return String(details.name);
     }
-    // For llm_provider and other types, try details.name
+    // For llm_provider and other types, try details.slug then details.name
+    if (details?.slug) return String(details.slug);
     if (details?.name) return String(details.name);
 
     return resource_id.slice(0, 8) + "...";
@@ -251,9 +251,9 @@ export default function AuditLogsPanel({
             <tr>
               <th className="px-4 py-3">Timestamp</th>
               <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Resource</th>
-              <th className="px-4 py-3">Resource Name</th>
-              <th className="px-4 py-3">Performed By</th>
+              <th className="px-4 py-3">Resource Type</th>
+              <th className="px-4 py-3">Target</th>
+              <th className="px-4 py-3">Actor</th>
               <th className="px-4 py-3">IP Address</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -394,7 +394,7 @@ export default function AuditLogsPanel({
               </div>
               <div className="flex gap-3">
                 <dt className="w-28 shrink-0 font-medium text-gray-500">
-                  Performed By
+                  Actor
                 </dt>
                 <dd className="text-gray-900">
                   {resolveUser(detailLog)}
