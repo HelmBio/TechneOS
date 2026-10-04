@@ -19,6 +19,7 @@ from core.auth.providers import hash_password
 from core.config import get_settings
 from core.exceptions import AlreadyExistsError, NotFoundError
 from core.models.agent import AgentDefinition, AgenticRun, AgenticTask
+from core.models.app import App, AppLaunch
 from core.models.artifact import ComputeArtifact
 from core.models.bucket import ObjectStoreBucket
 from core.models.common import AdminUserUpdate, OrgUpdate, RoleUpdate
@@ -33,7 +34,9 @@ from core.models.pipeline import (
     PipelineStepRun,
     PipelineVersion,
 )
+from core.models.task_run import TaskRun, TaskRunArtifact, TaskRunEvent
 from core.models.tool import Tool, ToolVersion
+from core.models.tool_run import ToolRun
 from core.models.user import ApiKey, AuditLog, Org, Role, Team, User
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,11 @@ _PROTECTED_ROLES = frozenset({"platform_admin", "org_admin"})
 # Ordered list of (key, model, column) for dependent tables.
 # Deletion order matters: children before parents, junction before main.
 _USER_DEPENDENTS: list[tuple[str, type, str]] = [
+    ("task_run_artifacts", TaskRunArtifact, "created_by"),
+    ("task_runs", TaskRun, "started_by"),
+    ("tool_runs", ToolRun, "submitted_by"),
+    ("app_launches", AppLaunch, "launched_by"),
+    ("apps", App, "created_by"),
     ("pipeline_run_artifacts", PipelineRunArtifact, "run_id"),
     ("pipeline_step_runs", PipelineStepRun, "run_id"),
     ("pipeline_runs", PipelineRun, "submitted_by"),
@@ -56,11 +64,29 @@ _USER_DEPENDENTS: list[tuple[str, type, str]] = [
     ("tools", Tool, "created_by"),
     ("dataset_versions", DatasetVersion, "created_by"),
     ("datasets", Dataset, "created_by"),
+    ("buckets", ObjectStoreBucket, "created_by"),
     ("llm_providers", LLMProvider, "created_by"),
     ("subscriptions", Subscription, "user_id"),
     ("notifications", Notification, "user_id"),
     ("api_keys", ApiKey, "user_id"),
     ("audit_logs", AuditLog, "user_id"),
+]
+
+# Optional references to the user on rows that stay (someone else's task run
+# they were assigned to, an app they last edited).  These are set to NULL.
+_USER_NULLABLE_REFERENCES: list[tuple[type, str]] = [
+    (App, "updated_by"),
+    (ComputeArtifact, "published_by"),
+    (Dataset, "updated_by"),
+    (DatasetVersion, "updated_by"),
+    (Pipeline, "updated_by"),
+    (PipelineVersion, "updated_by"),
+    (TaskRun, "assigned_user_id"),
+    (TaskRun, "project_lead_id"),
+    (TaskRun, "finished_by"),
+    (TaskRunEvent, "actor_user_id"),
+    (Tool, "updated_by"),
+    (ToolVersion, "updated_by"),
 ]
 
 
@@ -150,6 +176,9 @@ async def admin_delete_user(
             await session.execute(delete(model).where(col.in_(ids)))
 
     if not dry_run:
+        for model, column in _USER_NULLABLE_REFERENCES:
+            col = getattr(model, column)
+            await session.execute(update(model).where(col == user_id).values({column: None}))
         await session.execute(delete(User).where(User.id == user_id))
 
     summary: dict[str, Any] = {
