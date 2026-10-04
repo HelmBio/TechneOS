@@ -498,6 +498,35 @@ class TestAdminDeleteUserGuards:
         assert exc.value.status_code == 403
 
 
+    def test_every_user_reference_is_handled(self):
+        """Each column pointing at users.id is deleted or cleared, so the
+        final DELETE on users can't hit a foreign-key error (a 500)."""
+        import importlib
+        import pkgutil
+
+        import core.models
+        from auth_service.crud.admin import _USER_DEPENDENTS, _USER_NULLABLE_REFERENCES
+        from core.models import Base
+
+        for mod in pkgutil.iter_modules(core.models.__path__):
+            importlib.import_module(f"core.models.{mod.name}")
+
+        referencing = {
+            (table.name, column.name)
+            for table in Base.metadata.tables.values()
+            for column in table.columns
+            for fk in column.foreign_keys
+            if fk.target_fullname == "users.id"
+        }
+        handled = {
+            (model.__tablename__, column)
+            for _label, model, column in _USER_DEPENDENTS
+            if column != "run_id"
+        } | {(model.__tablename__, column) for model, column in _USER_NULLABLE_REFERENCES}
+
+        assert referencing - handled == set()
+
+
 class TestDeleteKeycloakUser:
     """delete_keycloak_user removes the sign-in account after a platform delete."""
 

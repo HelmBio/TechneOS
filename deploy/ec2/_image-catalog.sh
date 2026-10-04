@@ -25,14 +25,18 @@ PLATFORM_IMAGES=(
   "notification-service|packages/services/notification/pyproject.toml|packages/services/notification/Dockerfile|.|packages/services/notification packages/core"
   "portal|packages/portal/package.json|packages/portal/Dockerfile|packages/portal|packages/portal"
   "tool-runtime|packages/tool-runtime/pyproject.toml|packages/tool-runtime/Dockerfile|packages/tool-runtime|packages/tool-runtime"
+  # MinIO (server + mc), built from source because MinIO no longer publishes images.
+  # Also used by minio-init. Its version is the Dockerfile's `ARG VERSION`.
+  "minio|deploy/minio/Dockerfile|deploy/minio/Dockerfile|deploy/minio|deploy/minio"
 )
 
 # Version string from a package manifest ([project] version in pyproject.toml,
-# or "version" in package.json).
+# "version" in package.json, or `ARG VERSION=` in a Dockerfile).
 pkg_version() {
   case "$1" in
     *.toml) grep -m1 -E '^version[[:space:]]*=' "$1" | sed -E 's/.*"([^"]+)".*/\1/' ;;
     *.json) grep -m1 '"version"' "$1" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' ;;
+    *Dockerfile) grep -m1 -E '^ARG VERSION=' "$1" | cut -d= -f2- ;;
   esac
 }
 
