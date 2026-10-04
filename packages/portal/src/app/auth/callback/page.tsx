@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPost, setTokens } from "@/lib/api";
+import { apiPost, setTokens, ssoErrorMessage } from "@/lib/api";
 import { useAuth, setLoginProvider } from "@/lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -64,9 +64,7 @@ function CallbackContent() {
       await refreshUser();
       router.push("/");
     } catch (err: unknown) {
-      setError(
-        err instanceof Error ? err.message : "SSO login failed",
-      );
+      setError(ssoErrorMessage(err));
     }
   }, [searchParams, router, refreshUser]);
 

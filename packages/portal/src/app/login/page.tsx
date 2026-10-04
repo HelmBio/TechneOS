@@ -7,6 +7,7 @@ import {
   buildOAuth2LoginUrl,
   generatePKCE,
   setTokens,
+  ssoErrorMessage,
 } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -75,9 +76,7 @@ function LoginContent() {
       await refreshUser();
       router.push("/");
     } catch (err: unknown) {
-      setError(
-        err instanceof Error ? err.message : "SSO login failed",
-      );
+      setError(ssoErrorMessage(err));
     } finally {
       setLoading(false);
     }

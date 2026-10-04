@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.auth.providers import hash_password, verify_password
+from core.config import get_settings
 from core.exceptions import InvalidCredentialsError, NotFoundError
 from core.models.common import UserCreate, UserUpdate
 from core.models.user import Role, User
@@ -67,7 +68,8 @@ async def create_user_from_keycloak(
 
     No password is stored — authentication is handled entirely by Keycloak.
     The user ID is set to the Keycloak ``sub`` claim so that token payloads
-    match the local DB record.
+    match the local DB record. The account starts active unless
+    ``SSO_NEW_USERS_ACTIVE`` is false, in which case an admin must activate it.
     """
     role_id = None
     if role_name:
@@ -84,6 +86,7 @@ async def create_user_from_keycloak(
         org_id=org_id,
         team_id=team_id,
         role_id=role_id,
+        is_active=get_settings().sso_new_users_active,
     )
     session.add(user)
     await session.flush()

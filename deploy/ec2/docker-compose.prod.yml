@@ -46,6 +46,9 @@ x-platform-env: &platform-env
   # runtime (auth-service), and the same value seed used to create it, so the two
   # agree. Shared here so every service reads it instead of hardcoding a slug.
   DEFAULT_ORG_SLUG: ${DEFAULT_ORG_SLUG:-default}
+  # false = a first-time Google/GitHub/SSO user is created inactive and can't
+  # use the platform until an admin activates them (auth-service + gateway).
+  SSO_NEW_USERS_ACTIVE: ${SSO_NEW_USERS_ACTIVE:-true}
 
 x-minio-env: &minio-env
   MINIO_ENDPOINT: minio:9000

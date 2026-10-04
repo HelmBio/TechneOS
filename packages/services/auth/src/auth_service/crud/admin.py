@@ -1,5 +1,6 @@
 """Admin CRUD operations — platform-wide stats, user management, audit logs, docker."""
 
+import logging
 import os
 import time
 import uuid
@@ -34,6 +35,8 @@ from core.models.pipeline import (
 )
 from core.models.tool import Tool, ToolVersion
 from core.models.user import ApiKey, AuditLog, Org, Role, Team, User
+
+logger = logging.getLogger(__name__)
 
 # Role names that are protected from deletion.
 _PROTECTED_ROLES = frozenset({"platform_admin", "org_admin"})
@@ -76,11 +79,12 @@ async def admin_delete_user(
     caller_role: str = "",
     caller_org_id: str | None = None,
 ) -> dict[str, Any]:
-    """Delete a local user and all associated data.
+    """Delete a user (local or SSO) and all associated data.
 
-    Validates that the user is a local user (not SSO) and does not hold
-    a protected role.  When *caller_role* is ``org_admin`` the target
-    user must belong to the caller's org.
+    Validates that the user does not hold a protected role.  When
+    *caller_role* is ``org_admin`` the target user must belong to the
+    caller's org.  The matching Keycloak account is removed separately,
+    after the commit, by :func:`delete_keycloak_user`.
 
     Returns a summary dict with dependent counts (and ``"deleted": True``
     when *dry_run* is ``False``).
@@ -97,14 +101,6 @@ async def admin_delete_user(
     auth_method = user.auth_method
 
     # --- Validation ---
-
-    # Only local users can be removed via this endpoint
-    if auth_method != "local":
-        raise HTTPException(
-            status_code=422,
-            detail=f"User '{user_email}' is an SSO user (auth_method={auth_method}). "
-            "Only local users can be removed.",
-        )
 
     # Block removal of users with protected roles
     if user.role_id:
@@ -172,6 +168,36 @@ async def admin_delete_user(
         summary["deleted"] = True
 
     return summary
+
+
+async def delete_keycloak_user(external_id: str | None, email: str) -> str:
+    """Remove a deleted user's Keycloak account so they can't sign in again.
+
+    Without this, a deleted SSO user would simply be re-provisioned on their
+    next Google/GitHub sign-in.  Looks the account up by ``external_id``
+    (the Keycloak ``sub``) and falls back to email; the email must match,
+    so an enterprise OAuth2 subject never deletes an unrelated account.
+
+    Returns ``"deleted"``, ``"not_found"``, ``"skipped"`` (Keycloak not
+    configured) or ``"failed"``.  Never raises: the platform user is
+    already gone by the time this runs.
+    """
+    if not get_settings().keycloak_configured:
+        return "skipped"
+
+    from core.auth.keycloak_admin import get_keycloak_admin
+
+    kc = get_keycloak_admin()
+    try:
+        kc_user = await kc.get_user_by_id(external_id) if external_id else None
+        if kc_user is None or (kc_user.get("email") or "").lower() != email.lower():
+            kc_user = await kc.get_user_by_email(email)
+        if kc_user is None:
+            return "not_found"
+        return "deleted" if await kc.delete_user(kc_user["id"]) else "not_found"
+    except Exception:
+        logger.warning("Failed to delete Keycloak user for %s", email, exc_info=True)
+        return "failed"
 
 
 # --- Stats ---

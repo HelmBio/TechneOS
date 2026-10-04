@@ -26,6 +26,13 @@ class InvalidCredentialsError(AuthError):
         super().__init__("Invalid credentials")
 
 
+class AccountInactiveError(AuthError):
+    """The account exists but is inactive (e.g. awaiting administrator approval)."""
+
+    def __init__(self) -> None:
+        super().__init__("Your account is awaiting administrator approval")
+
+
 class TokenExpiredError(AuthError):
     """JWT token has expired."""
 

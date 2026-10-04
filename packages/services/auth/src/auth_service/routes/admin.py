@@ -19,6 +19,7 @@ from auth_service.crud.admin import (
     create_llm_provider,
     create_org,
     create_role,
+    delete_keycloak_user,
     delete_llm_provider,
     get_docker_container_logs,
     get_platform_stats,
@@ -246,13 +247,14 @@ async def admin_delete_user_by_email(
     session: AsyncSession = Depends(get_async_session),
     current_user: TokenPayload = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """Delete a local user and all associated data.
+    """Delete a user (local or SSO) and all associated data.
 
-    Only **local** users (auth_method = ``"local"``) can be removed.
     Users holding ``platform_admin`` or ``org_admin`` roles are
-    protected from deletion.
+    protected from deletion.  The user's Keycloak account is deleted
+    too, so an SSO user can't sign straight back in; the outcome is
+    reported as ``keycloak`` in the response.
 
-    ``platform_admin`` callers may delete any local user across all orgs.
+    ``platform_admin`` callers may delete any user across all orgs.
     ``org_admin`` callers are scoped to their own organization.
     """
     result = await session.execute(
@@ -261,6 +263,7 @@ async def admin_delete_user_by_email(
     user = result.scalar_one_or_none()
     if user is None:
         raise NotFoundError("User", email)
+    external_id = user.external_id
 
     summary = await admin_delete_user(
         session,
@@ -284,6 +287,7 @@ async def admin_delete_user_by_email(
 
     if not dry_run:
         await session.commit()
+        summary["keycloak"] = await delete_keycloak_user(external_id, email)
 
     return summary
 

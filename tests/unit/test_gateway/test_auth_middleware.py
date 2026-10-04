@@ -1,6 +1,6 @@
 """Tests for the gateway authentication middleware."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI, Request
@@ -12,6 +12,18 @@ from gateway.middleware.auth import (
     PUBLIC_PREFIXES,
     AuthMiddleware,
 )
+
+
+@pytest.fixture(autouse=True)
+def account_active():
+    """Treat every token's account as active unless a test says otherwise.
+
+    The real check reads the database; these tests run without one.
+    """
+    with patch.object(
+        AuthMiddleware, "_is_account_active", new=AsyncMock(return_value=True)
+    ) as mock:
+        yield mock
 
 
 @pytest.fixture
@@ -173,3 +185,107 @@ class TestInternalServiceToken:
         )
         assert resp.status_code == 401
         assert "Invalid internal token" in resp.json()["detail"]
+
+
+class TestInactiveAccount:
+    """A valid token for an inactive account (e.g. awaiting approval) is refused."""
+
+    @patch("gateway.middleware.auth.validate_any_token")
+    def test_inactive_bearer_returns_403(self, mock_validate, client, account_active):
+        mock_validate.return_value = MagicMock(sub="user-123")
+        account_active.return_value = False
+
+        resp = client.get(
+            "/api/v1/protected",
+            headers={"Authorization": "Bearer valid-token"},
+        )
+        assert resp.status_code == 403
+        assert "awaiting administrator approval" in resp.json()["detail"]
+
+    @patch("gateway.middleware.auth.validate_any_token")
+    def test_inactive_cookie_returns_403(self, mock_validate, client, account_active):
+        mock_validate.return_value = MagicMock(sub="user-123")
+        account_active.return_value = False
+
+        client.cookies.set("techneos_access_token", "valid-token")
+        resp = client.get("/api/v1/protected")
+        assert resp.status_code == 403
+
+    @patch("gateway.middleware.auth.validate_any_token")
+    def test_status_lookup_failure_returns_503(self, mock_validate, client, account_active):
+        mock_validate.return_value = MagicMock(sub="user-123")
+        account_active.side_effect = RuntimeError("db down")
+
+        resp = client.get(
+            "/api/v1/protected",
+            headers={"Authorization": "Bearer valid-token"},
+        )
+        assert resp.status_code == 503
+
+
+class TestAccountStatusCache:
+    """_is_account_active caches the database lookup per token subject."""
+
+    @pytest.fixture(autouse=True)
+    def account_active(self):
+        # Override the module-level fixture: exercise the real method here.
+        yield None
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        from gateway.middleware import auth as auth_module
+
+        auth_module._account_status_cache.clear()
+        yield
+        auth_module._account_status_cache.clear()
+
+    async def test_lookup_is_cached(self):
+        from core.models.common import TokenPayload
+
+        middleware = AuthMiddleware(app=MagicMock())
+        claims = TokenPayload(sub="user-1", email="u@example.com")
+        with patch.object(
+            AuthMiddleware, "_lookup_account_active", new=AsyncMock(return_value=False)
+        ) as lookup:
+            assert await middleware._is_account_active(claims) is False
+            assert await middleware._is_account_active(claims) is False
+
+        lookup.assert_awaited_once()
+
+    async def test_cache_expires(self):
+        from core.models.common import TokenPayload
+        from gateway.middleware import auth as auth_module
+
+        middleware = AuthMiddleware(app=MagicMock())
+        claims = TokenPayload(sub="user-1", email="u@example.com")
+        with (
+            patch.object(
+                AuthMiddleware, "_lookup_account_active", new=AsyncMock(return_value=True)
+            ) as lookup,
+            patch.object(auth_module.time, "monotonic", side_effect=[0.0, 1000.0]),
+        ):
+            await middleware._is_account_active(claims)
+            await middleware._is_account_active(claims)
+
+        assert lookup.await_count == 2
+
+    @pytest.mark.parametrize("new_users_active", [True, False])
+    async def test_unknown_account_follows_setting(self, new_users_active):
+        from core.models.common import TokenPayload
+
+        result = MagicMock()
+        result.scalars.return_value = iter([])
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+        factory = MagicMock()
+        factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        settings = MagicMock(sso_new_users_active=new_users_active)
+
+        middleware = AuthMiddleware(app=MagicMock())
+        claims = TokenPayload(sub="kc-sub", email="new@example.com")
+        with (
+            patch("core.database.postgres.get_session_factory", return_value=factory),
+            patch("gateway.middleware.auth.get_settings", return_value=settings),
+        ):
+            assert await middleware._lookup_account_active(claims) is new_users_active

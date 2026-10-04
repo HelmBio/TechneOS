@@ -38,6 +38,7 @@ from core.auth.providers import (
 from core.config import get_settings
 from core.database.postgres import get_async_session
 from core.exceptions import (
+    AccountInactiveError,
     AlreadyExistsError,
     InvalidCredentialsError,
     InvalidTokenError,
@@ -60,6 +61,31 @@ router = APIRouter()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+
+async def _reject_if_inactive(
+    session: AsyncSession, user: User, request: Request, provider: str
+) -> None:
+    """Refuse an SSO sign-in for an inactive account (e.g. awaiting approval).
+
+    Commits before raising so a just-provisioned account and the audit entry
+    persist (the request session rolls back on error), letting an admin find
+    and activate the account.
+    """
+    if user.is_active:
+        return
+    await write_audit_log(
+        session,
+        user_id=user.id,
+        action="user_login_failed",
+        resource_type="auth",
+        resource_id=user.id,
+        details={"email": user.email, "provider": provider, "reason": "inactive_account"},
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    await session.commit()
+    raise AccountInactiveError()
 
 
 async def _resolve_role_data(session: AsyncSession, user: User) -> tuple[str | None, list[str]]:
@@ -449,6 +475,7 @@ async def _token_exchange_keycloak(
     user = await get_user_by_email(session, token_payload.email)
     if user is None:
         raise InvalidCredentialsError()
+    await _reject_if_inactive(session, user, request, "keycloak")
     role_name, permissions = await _resolve_role_data(session, user)
     local_provider = LocalAuthProvider()
     tokens = await local_provider.create_tokens(
@@ -536,6 +563,7 @@ async def _token_exchange_oauth2(
     user = await get_user_by_email(session, email)
     if user is None:
         raise InvalidCredentialsError()
+    await _reject_if_inactive(session, user, request, "oauth2")
 
     role_name, permissions = await _resolve_role_data(session, user)
 
@@ -592,6 +620,8 @@ async def refresh(
     user = await get_user_by_id(session, payload.sub)
     if not user:
         raise InvalidTokenError("User not found")
+    if not user.is_active:
+        raise AccountInactiveError()
 
     role_name, permissions = await _resolve_role_data(session, user)
 
@@ -689,6 +719,10 @@ async def get_me(
 
     if user is None:
         raise NotFoundError("User", current_user.email)
+    if not user.is_active:
+        # Commit first so a just-provisioned (inactive) account persists.
+        await session.commit()
+        raise AccountInactiveError()
 
     role_name, _permissions = await _resolve_role_data(session, user)
 

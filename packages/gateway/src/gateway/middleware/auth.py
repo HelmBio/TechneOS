@@ -4,17 +4,28 @@ Validates JWT tokens and API keys on incoming requests,
 attaching user information to the request state.
 """
 
+import json
 import logging
+import time
 from datetime import UTC, datetime
 
 from fastapi import Request, Response
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from core.auth.providers import validate_any_token, verify_password
-from core.exceptions import AuthError
+from core.config import get_settings
+from core.exceptions import AccountInactiveError, AuthError
+from core.models.common import TokenPayload
 
 logger = logging.getLogger(__name__)
+
+# How long an account's active flag is cached per token subject, so the gateway
+# doesn't hit the database on every request. Activating or deactivating a user
+# takes effect within this window.
+ACCOUNT_STATUS_TTL_SECONDS = 30.0
+_ACCOUNT_STATUS_CACHE_MAX = 10_000
+_account_status_cache: dict[str, tuple[float, bool]] = {}
 
 # Paths that don't require authentication
 PUBLIC_PATHS = {
@@ -72,14 +83,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = auth_header[7:]
             try:
                 user_claims = await self._validate_bearer(token)
-                request.state.user = user_claims
-                return await call_next(request)
             except AuthError:
                 return Response(
                     content='{"detail": "Invalid or expired token"}',
                     status_code=401,
                     media_type="application/json",
                 )
+            denied = await self._inactive_account_response(user_claims)
+            if denied is not None:
+                return denied
+            request.state.user = user_claims
+            return await call_next(request)
 
         # Try session cookie (browser iframe loads / same-origin navigations
         # where an Authorization header can't be injected — set on /login).
@@ -87,14 +101,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if cookie_token:
             try:
                 user_claims = await self._validate_bearer(cookie_token)
-                request.state.user = user_claims
-                return await call_next(request)
             except AuthError:
                 return Response(
                     content='{"detail": "Invalid or expired session"}',
                     status_code=401,
                     media_type="application/json",
                 )
+            denied = await self._inactive_account_response(user_claims)
+            if denied is not None:
+                return denied
+            request.state.user = user_claims
+            return await call_next(request)
 
         # Try API key
         api_key = request.headers.get("X-API-Key")
@@ -113,7 +130,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         internal_token = request.headers.get("X-Internal-Token")
         if internal_token:
             from core.config import get_settings
-            from core.models.common import TokenPayload
 
             settings = get_settings()
             if (
@@ -141,6 +157,67 @@ class AuthMiddleware(BaseHTTPMiddleware):
             status_code=401,
             media_type="application/json",
         )
+
+    async def _inactive_account_response(self, claims: TokenPayload) -> Response | None:
+        """Return a 403 response if the token's account is inactive, else None.
+
+        A valid token alone isn't enough: an admin may have deactivated the
+        account since it was issued, or (with ``SSO_NEW_USERS_ACTIVE=false``) a
+        new SSO account may still be awaiting approval. Keycloak-issued tokens
+        are also accepted here directly, so this is the one place every bearer
+        request passes through.
+        """
+        try:
+            active = await self._is_account_active(claims)
+        except Exception:
+            logger.exception("Account status lookup failed for %s", claims.sub)
+            return Response(
+                content='{"detail": "Account status unavailable"}',
+                status_code=503,
+                media_type="application/json",
+            )
+        if active:
+            return None
+        return Response(
+            content=json.dumps({"detail": AccountInactiveError().message}),
+            status_code=403,
+            media_type="application/json",
+        )
+
+    async def _is_account_active(self, claims: TokenPayload) -> bool:
+        """Cached check of the account's ``is_active`` flag (see the TTL above)."""
+        now = time.monotonic()
+        cached = _account_status_cache.get(claims.sub)
+        if cached is not None and now - cached[0] < ACCOUNT_STATUS_TTL_SECONDS:
+            return cached[1]
+        active = await self._lookup_account_active(claims)
+        if len(_account_status_cache) >= _ACCOUNT_STATUS_CACHE_MAX:
+            _account_status_cache.clear()
+        _account_status_cache[claims.sub] = (now, active)
+        return active
+
+    async def _lookup_account_active(self, claims: TokenPayload) -> bool:
+        """Read the account's active flag from the database.
+
+        Matches the token subject the same ways auth-service JIT provisioning
+        does (local id, Keycloak/OAuth2 ``sub``, email). A token for an account
+        that doesn't exist yet only gets through when new SSO users start
+        active; otherwise it must first go through ``/auth/token-exchange``,
+        which provisions the account (inactive) for an admin to approve.
+        """
+        from core.database.postgres import get_session_factory
+        from core.models.user import User
+
+        conditions = [User.id == claims.sub, User.external_id == claims.sub]
+        if claims.email:
+            conditions.append(User.email == claims.email)
+        factory = get_session_factory()
+        async with factory() as session:
+            result = await session.execute(select(User.is_active).where(or_(*conditions)))
+            flags = list(result.scalars())
+        if not flags:
+            return get_settings().sso_new_users_active
+        return all(flags)
 
     async def _validate_bearer(self, token: str):  # type: ignore[no-untyped-def]
         """Validate a JWT by inspecting its header to pick the right provider.
@@ -213,8 +290,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         role_name = role.name
 
                 await session.commit()
-
-                from core.models.common import TokenPayload
 
                 return TokenPayload(
                     sub=user.id,

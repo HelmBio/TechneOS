@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     # read it from here rather than hardcoding a literal).
     default_org_slug: str = "default"
 
+    # --- Approval for JIT-provisioned SSO users ---
+    # Whether a first-seen SSO user (Google/GitHub via Keycloak, or enterprise
+    # OAuth2) is created active. Set False to require an admin to activate new
+    # SSO accounts before they can use the platform (e.g. a public demo).
+    sso_new_users_active: bool = True
+
     @property
     def keycloak_issuer_url(self) -> str:
         """OIDC issuer URL for the configured realm."""
