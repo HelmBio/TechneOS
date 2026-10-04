@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the platform's 11 images and push them to the registry the EC2
+# Build the platform's 12 images and push them to the registry the EC2
 # deployment pulls from.
 #
 # WHERE THIS RUNS: your workstation or a release host with Docker + registry

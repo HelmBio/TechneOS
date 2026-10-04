@@ -20,7 +20,7 @@ deploy.sh ──bundle+ssh──▶ remote-deploy.sh ──▶ compose up · mig
 | `techneos.nginx.conf.template` | the edge config, rendered per-host at deploy time |
 | `techneos-realm.keycloak.prod.json` | the Keycloak realm imported on first boot |
 | `.env.prod.example` | the config + secrets template — copy, fill, keep out of git |
-| `build-and-push.sh` | build the 11 images (linux/amd64) and push them, each tagged with its package version |
+| `build-and-push.sh` | build the 12 images (linux/amd64) and push them, each tagged with its package version |
 | `deploy.sh` | bundle + ship + run the deploy over SSH |
 | `remote-deploy.sh` | host-side: pull, start, migrate, seed, configure nginx |
 | `_image-catalog.sh` | the image catalog (name → manifest/version) shared by the two scripts, so their tags can't drift |
@@ -35,8 +35,8 @@ are minted from it per use.
 | AWS resource | What it's for | `.env.prod` keys | Example value |
 |--------------|---------------|------------------|---------------|
 | **EC2 instance** | runs the whole stack | `SSH_HOST` (+ `SSH_USER`, `SSH_KEY_PATH`, `SSH_PORT`) | `ec2-1-2-3-4.compute.amazonaws.com` |
-| **ECR registry** | holds the 11 platform images | `DOCKER_IMAGE_REGISTRY` (region auto-derived from its host) | `111122223333.dkr.ecr.us-east-1.amazonaws.com` |
-| **ECR repos** `techneos/*` | one per image (gateway, the 8 services, portal, tool-runtime) | — (addressed as `$DOCKER_IMAGE_REGISTRY/techneos/<name>`; create the repos, no key) | `techneos/gateway`, `techneos/portal`, … |
+| **ECR registry** | holds the 12 platform images | `DOCKER_IMAGE_REGISTRY` (region auto-derived from its host) | `111122223333.dkr.ecr.us-east-1.amazonaws.com` |
+| **ECR repos** `techneos/*` | one per image (gateway, the 8 services, portal, tool-runtime, minio) | — (addressed as `$DOCKER_IMAGE_REGISTRY/techneos/<name>`; create the repos, no key) | `techneos/gateway`, `techneos/portal`, … |
 | **CodeArtifact repo** | Python index for catalog tool/agent installs | `PYTHON_PACKAGE_INDEX_URL`, `PYTHON_PACKAGE_PUBLISH_URL` | `https://<domain>-<account>.d.codeartifact.<region>.amazonaws.com/pypi/<repo>/simple/` (index) and `…/pypi/<repo>/` (publish) |
 | **IAM instance role** | ECR pull + CodeArtifact token minting, from the instance | — (attached to the instance; **not** an env var) | see policy below |
 
