@@ -141,3 +141,10 @@ require `make up`.
 ## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — full architecture design document
+
+## License
+
+TechneOS is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution. "TechneOS" is a trademark of HelmBio LLC; the license does not
+grant rights to use the name or logo. For a managed, hosted TechneOS or commercial
+support, contact HelmBio LLC.
