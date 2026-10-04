@@ -21,6 +21,7 @@ from core.auth.openapi import install_permission_annotations
 from core.config import get_settings
 from core.database.postgres import dispose_engine
 from core.exceptions import (
+    AccountInactiveError,
     AlreadyExistsError,
     AuthError,
     InsufficientPermissionsError,
@@ -67,6 +68,11 @@ async def already_exists_handler(request: Request, exc: AlreadyExistsError) -> J
 async def insufficient_permissions_handler(
     request: Request, exc: InsufficientPermissionsError
 ) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": exc.message})
+
+
+@app.exception_handler(AccountInactiveError)
+async def account_inactive_handler(request: Request, exc: AccountInactiveError) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": exc.message})
 
 

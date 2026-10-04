@@ -5,6 +5,8 @@ import {
   clearTokens,
   isLoggedIn,
   getTokenClaims,
+  PENDING_APPROVAL_MESSAGE,
+  ssoErrorMessage,
 } from "@/lib/api";
 
 describe("ApiError", () => {
@@ -18,6 +20,20 @@ describe("ApiError", () => {
   it("is an instance of Error", () => {
     const err = new ApiError(500, "Server Error");
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe("ssoErrorMessage", () => {
+  it("explains a 403 as an account awaiting approval", () => {
+    const err = new ApiError(403, "Your account is awaiting administrator approval");
+    expect(ssoErrorMessage(err)).toBe(PENDING_APPROVAL_MESSAGE);
+  });
+
+  it("passes other errors through", () => {
+    expect(ssoErrorMessage(new ApiError(401, "Invalid credentials"))).toBe(
+      "HTTP 401: Invalid credentials",
+    );
+    expect(ssoErrorMessage("boom")).toBe("SSO login failed");
   });
 });
 

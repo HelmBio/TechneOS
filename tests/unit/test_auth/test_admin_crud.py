@@ -447,20 +447,23 @@ class TestAdminDeleteUserGuards:
         with pytest.raises(NotFoundError):
             await admin_delete_user(session, "missing")
 
-    async def test_sso_user_rejected(self, session):
-        from fastapi import HTTPException
-
+    async def test_sso_user_can_be_deleted(self, session):
         from auth_service.crud.admin import admin_delete_user
 
         # No hashed_password → auth_method == "sso".
-        sso_user = self._user(hashed_password=None)
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = sso_user
-        session.execute.return_value = result
-        with pytest.raises(HTTPException) as exc:
-            await admin_delete_user(session, "u1")
-        assert exc.value.status_code == 422
-        assert "SSO" in exc.value.detail
+        sso_user = self._user(hashed_password=None, role_id=None)
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = sso_user
+        runs_result = MagicMock()
+        runs_result.scalars.return_value.all.return_value = []
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        session.execute.side_effect = [user_result, runs_result] + [count_result] * 50
+
+        summary = await admin_delete_user(session, "u1")
+
+        assert summary["deleted"] is True
+        assert summary["user"]["auth_method"] == "sso"
 
     async def test_platform_admin_protected(self, session):
         from fastapi import HTTPException
@@ -493,3 +496,93 @@ class TestAdminDeleteUserGuards:
                 session, "u1", caller_role="org_admin", caller_org_id="o2"
             )
         assert exc.value.status_code == 403
+
+
+class TestDeleteKeycloakUser:
+    """delete_keycloak_user removes the sign-in account after a platform delete."""
+
+    @pytest.fixture
+    def kc(self):
+        kc = MagicMock()
+        kc.get_user_by_id = AsyncMock(return_value={"id": "kc-1", "email": "a@b.com"})
+        kc.get_user_by_email = AsyncMock(return_value=None)
+        kc.delete_user = AsyncMock(return_value=True)
+        return kc
+
+    async def _run(self, kc, external_id, email, configured=True):
+        from auth_service.crud.admin import delete_keycloak_user
+
+        settings = MagicMock(keycloak_configured=configured)
+        with (
+            patch("auth_service.crud.admin.get_settings", return_value=settings),
+            patch("core.auth.keycloak_admin.get_keycloak_admin", return_value=kc),
+        ):
+            return await delete_keycloak_user(external_id, email)
+
+    async def test_skipped_without_keycloak(self, kc):
+        assert await self._run(kc, "kc-1", "a@b.com", configured=False) == "skipped"
+        kc.delete_user.assert_not_awaited()
+
+    async def test_deletes_by_external_id(self, kc):
+        assert await self._run(kc, "kc-1", "A@B.com") == "deleted"
+        kc.delete_user.assert_awaited_once_with("kc-1")
+
+    async def test_falls_back_to_email_when_id_email_differs(self, kc):
+        # e.g. an enterprise OAuth2 subject that happens to match another account
+        kc.get_user_by_id.return_value = {"id": "kc-other", "email": "other@b.com"}
+        kc.get_user_by_email.return_value = {"id": "kc-2", "email": "a@b.com"}
+        assert await self._run(kc, "kc-other", "a@b.com") == "deleted"
+        kc.delete_user.assert_awaited_once_with("kc-2")
+
+    async def test_not_found(self, kc):
+        kc.get_user_by_id.return_value = None
+        assert await self._run(kc, None, "a@b.com") == "not_found"
+        kc.get_user_by_id.assert_not_awaited()
+        kc.delete_user.assert_not_awaited()
+
+    async def test_failure_is_reported_not_raised(self, kc):
+        kc.delete_user.side_effect = RuntimeError("keycloak down")
+        assert await self._run(kc, "kc-1", "a@b.com") == "failed"
+
+
+class TestDeleteUserRoute:
+    """DELETE /admin/users/by-email removes the Keycloak account after committing."""
+
+    async def _call(self, session, *, dry_run):
+        from auth_service.routes.admin import admin_delete_user_by_email
+        from core.models.user import User
+
+        user = User(id="u1", email="a@b.com", full_name="A", org_id="o1", external_id="kc-1")
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = user
+        session.execute.return_value = result
+        session.commit = AsyncMock()
+        caller = MagicMock(sub="admin-1", role="platform_admin", org_id="o1")
+        request = MagicMock(headers={})
+
+        with (
+            patch(
+                "auth_service.routes.admin.admin_delete_user",
+                new=AsyncMock(return_value={"dry_run": dry_run}),
+            ),
+            patch("auth_service.routes.admin.write_audit_log", new=AsyncMock()),
+            patch(
+                "auth_service.routes.admin.delete_keycloak_user",
+                new=AsyncMock(return_value="deleted"),
+            ) as kc_delete,
+        ):
+            summary = await admin_delete_user_by_email(
+                "a@b.com", request, dry_run=dry_run, session=session, current_user=caller
+            )
+        return summary, kc_delete
+
+    async def test_deletes_keycloak_account(self, session):
+        summary, kc_delete = await self._call(session, dry_run=False)
+        session.commit.assert_awaited_once()
+        kc_delete.assert_awaited_once_with("kc-1", "a@b.com")
+        assert summary["keycloak"] == "deleted"
+
+    async def test_dry_run_leaves_keycloak_alone(self, session):
+        summary, kc_delete = await self._call(session, dry_run=True)
+        kc_delete.assert_not_awaited()
+        assert "keycloak" not in summary

@@ -17,6 +17,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Shown when an SSO sign-in is refused because the account awaits approval. */
+export const PENDING_APPROVAL_MESSAGE =
+  "Your account has been created and is awaiting administrator approval. " +
+  "You can sign in once an admin activates it.";
+
+/** User-facing message for a failed SSO token exchange. */
+export function ssoErrorMessage(err: unknown): string {
+  // The auth service answers 403 when the account exists but is inactive.
+  if (err instanceof ApiError && err.status === 403) {
+    return PENDING_APPROVAL_MESSAGE;
+  }
+  return err instanceof Error ? err.message : "SSO login failed";
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("techneos_access_token");

@@ -11,6 +11,7 @@ export default function OrgAdminUsersPage() {
       usersApiPath="/api/v1/users"
       updateApiPrefix="/api/v1/users"
       createApiPath="/api/v1/users"
+      deleteApiPrefix="/api/v1/admin/users/by-email"
       rolesApiPath="/api/v1/users/roles"
       showTeam
       teamsApiPath={

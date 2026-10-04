@@ -8,6 +8,7 @@ export default function AdminUsersPage() {
       usersApiPath="/api/v1/admin/users"
       updateApiPrefix="/api/v1/admin/users"
       createApiPath="/api/v1/admin/users"
+      deleteApiPrefix="/api/v1/admin/users/by-email"
       rolesApiPath="/api/v1/admin/roles"
       showOrg
       orgsApiPath="/api/v1/admin/orgs"

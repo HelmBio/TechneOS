@@ -175,6 +175,14 @@ class KeycloakAdminClient:
             resp = await self._request("PUT", f"/users/{user_id}", json=payload)
             resp.raise_for_status()
 
+    async def delete_user(self, user_id: str) -> bool:
+        """Delete a Keycloak user. Returns False if the user doesn't exist."""
+        resp = await self._request("DELETE", f"/users/{user_id}")
+        if resp.status_code == 404:
+            return False
+        resp.raise_for_status()
+        return True
+
     # ------------------------------------------------------------------
     # Role management
     # ------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Remove a local user and all associated data.
+"""Remove a user (local or SSO) and all associated data, including their Keycloak account.
 
 Usage:
     ./bin/user_removal.sh <email> [options]
@@ -114,6 +114,9 @@ class UserRemovalScript:
         print(_render_dependents(dependents))
         print(f"  Deleted {total} dependent row(s)")
         print(f"  Deleted user {email}")
+        keycloak = data.get("keycloak")
+        if keycloak:
+            print(f"  Keycloak account: {keycloak}")
 
         print("\nDone.")
 

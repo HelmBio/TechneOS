@@ -541,6 +541,19 @@ class TestKeycloakAdminClient:
         assert call_count == 2  # GET role + POST assignment
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(("status", "expected"), [(204, True), (404, False)])
+    async def test_delete_user(self, admin_client, status, expected):
+        """Deleting returns False when the user is already gone."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = status
+
+        with patch.object(
+            admin_client, "_request", new_callable=AsyncMock, return_value=mock_resp
+        ) as req:
+            assert await admin_client.delete_user("user-id") is expected
+        req.assert_awaited_once_with("DELETE", "/users/user-id")
+
+    @pytest.mark.asyncio
     async def test_logout_user(self, admin_client):
         """Test terminating user sessions."""
         mock_resp = MagicMock()
